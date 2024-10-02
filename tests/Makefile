@@ -4,14 +4,19 @@ CC = clang
 # 编译选项
 CFLAGS = -g -Wall
 
-# 
+# 编译文件后缀
 TARGET_SUFFIX = 
+
+# 清理命令
+RM = rm -f
+
 ifeq ($(OS),Windows_NT)
 TARGET_SUFFIX = .exe
+RM = del
 endif
 
 # 默认目标为构建并运行测试
-all: build run
+all: run
 
 build: chashmap cstring cvec
 
@@ -34,3 +39,6 @@ cvec:
 
 run_cvec: cvec
 	./test_cvec$(TARGET_SUFFIX)
+
+clean:
+	$(RM) *.exe *.o *.ilk *.pdb
