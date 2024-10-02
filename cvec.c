@@ -23,11 +23,23 @@ vec* vec_create(u32 vsize, u32 len, u32 cap, void* bind_pp, void* memory)
     return h;
 }
 
+vec* vec_new(u32 vsize)
+{
+    return vec_create(vsize, 0, 0, NULL, NULL);
+}
+
+vec* vec_bind_new(u32 vsize, void* bind_pp)
+{
+    return vec_create(vsize, 0, 0, bind_pp, NULL);
+}
+
 /**
  * @brief 绑定 vec 内存到指针
  * 
  * @param h 
  */
+ void vec_bind_pp_bind_mem(vec* h);
+ 
 inline void vec_bind_pp_bind_mem(vec* h)
 {
     if (h->bind_pp) {
@@ -48,6 +60,8 @@ void vec_set_bind_pp(vec* h, void* bind_pp)
  * @param cap
  * @return void* 
  */
+void* vec_cap_replace_mem(vec* h, size cap);
+
 inline void* vec_cap_replace_mem(vec* h, size cap)
 {
     void* old_mem = h->mem;
@@ -245,6 +259,12 @@ int vec_remove(vec* h, size i)
         (h->len - ri) * h->vsize
     );
     return 0;
+}
+
+inline void vec_clear(vec* h)
+{
+    if (!h) return;
+    h->len = 0;
 }
 
 void vec_free(vec* h)

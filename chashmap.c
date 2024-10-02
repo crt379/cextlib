@@ -42,6 +42,13 @@ static u64 fnv_1a_hash(const void* data, usize dsize, u64 seed)
 	return hash ^ hash >> 32;
 }
 
+inline void free_ptrs(void** ptrs, size len)
+{
+    for (usize i = 0; i < len; i++) {
+        free2(ptrs[i]);
+    }
+}
+
 void hashmap_free(hashmap* map) 
 {
     if (!map) {
@@ -85,6 +92,18 @@ hashmap* hashmap_new_with_cap(
     map->hasher = (hasher) ? hasher : fnv_1a_hash;
     map->cmp = (cmp) ? cmp : memcmp;
     return map;
+}
+
+hashmap* hashmap_new(
+    usize ksize, 
+    usize vsize, 
+    u64 seed,
+	u64 hasher(const void*, usize, u64), 
+    int cmp(const void*, const void*, usize)
+    )
+{
+    assert(ksize > 0 && "ksize must be greater than 0");
+    return hashmap_new_with_cap(INITIAL_BUCKETS, ksize, vsize, seed, hasher, cmp);
 }
 
 int hashmap_resize(hashmap* map, usize resize) {
@@ -219,8 +238,8 @@ size hashmap_update_or_insert_index(hashmap* map, void* key, void* value, usize 
 
 void hashmap_insert_zero_value(hashmap* map, void* key, usize hashi, usize i)
 {
-    #define __BREAK_VAL_P_H                                                 \
-        b->value = NULL;                                                    \
+    #define __BREAK_VAL_P_H                                                     \
+        b->value = NULL;                                                        \
     
     #define ___SWAP_VAL_P_H __BREAK_VAL_P_H
         
@@ -231,18 +250,18 @@ void hashmap_insert_zero_value(hashmap* map, void* key, usize hashi, usize i)
 
 void hashmap_insert_null_value(hashmap* map, void* key, void* value, usize hashi, usize i)
 {
-    #define __BREAK_VAL_P_H                                                 \
-        ptr = map->values + (i * map->vsize);                               \
-        memset(ptr, 0, map->vsize);                                         \
-        b->value = NULL;                                                    \
+    #define __BREAK_VAL_P_H                                                     \
+        ptr = map->values + (i * map->vsize);                                   \
+        memset(ptr, 0, map->vsize);                                             \
+        b->value = NULL;                                                        \
     
-    #define ___SWAP_VAL_P_H                                                 \
-        u8 *swap_v = map->values_swap + (map->vsize * swap_i);              \
-        ptr = map->values + (i * map->vsize);                               \
-        memcpy(swap_v, ptr, map->vsize);                                    \
-        memset(ptr, 0, map->vsize);                                         \
-        b->value = NULL;                                                    \
-        value = swap_v;                                                     \
+    #define ___SWAP_VAL_P_H                                                     \
+        u8 *swap_v = map->values_swap + (map->vsize * swap_i);                  \
+        ptr = map->values + (i * map->vsize);                                   \
+        memcpy(swap_v, ptr, map->vsize);                                        \
+        memset(ptr, 0, map->vsize);                                             \
+        b->value = NULL;                                                        \
+        value = swap_v;                                                         \
         
     
     __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
@@ -252,18 +271,18 @@ void hashmap_insert_null_value(hashmap* map, void* key, void* value, usize hashi
 
 void hashmap_insert_normal_value(hashmap* map, void* key, void* value, usize hashi, usize i)
 {   
-    #define __BREAK_VAL_P_H                                                 \
-        ptr = map->values + (i * map->vsize);                               \
-        memcpy(ptr, value, map->vsize);                                     \
-        b->value = ptr;                                                     \
+    #define __BREAK_VAL_P_H                                                     \
+        ptr = map->values + (i * map->vsize);                                   \
+        memcpy(ptr, value, map->vsize);                                         \
+        b->value = ptr;                                                         \
     
-    #define ___SWAP_VAL_P_H                                                 \
-        u8 *swap_v = map->values_swap + (map->vsize * swap_i);              \
-        ptr = map->values + (i * map->vsize);                               \
-        memcpy(swap_v, ptr, map->vsize);                                    \
-        memcpy(ptr, value, map->vsize);                                     \
-        b->value = ptr;                                                     \
-        value = swap_v;                                                     \
+    #define ___SWAP_VAL_P_H                                                     \
+        u8 *swap_v = map->values_swap + (map->vsize * swap_i);                  \
+        ptr = map->values + (i * map->vsize);                                   \
+        memcpy(swap_v, ptr, map->vsize);                                        \
+        memcpy(ptr, value, map->vsize);                                         \
+        b->value = ptr;                                                         \
+        value = swap_v;                                                         \
     
     __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
     #undef __BREAK_VAL_P_H
@@ -434,6 +453,15 @@ int hashmap_remove(hashmap* map, const void* key)
     return 0;
 }
 
+size hashmap_count(hashmap* map)
+{
+    if (!map) {
+        return 0;
+    }
+
+    return map->len;
+}
+
 int hashmap_clear(hashmap* map)
 {
     if (!map) {
@@ -487,6 +515,37 @@ hashmap* hashmap_clone(hashmap* map)
 
     hashmap_update(new_map, map);
     return new_map;
+}
+
+inline b32 hashmap_empty(hashmap* map)
+{
+    return map->len == 0;
+}
+
+hashmap_iterator hashmap_begin(hashmap* map) 
+{
+    hashmap_iterator iter = {
+        .map = map,
+        .index = 0,
+        .step = 1,
+        .len = 0,
+        .state = 0,
+    };
+    
+    return iter;
+}
+
+hashmap_iterator hashmap_end(hashmap* map) 
+{
+    hashmap_iterator iter = {
+        .map = map,
+        .index = map->cap - 1,
+        .step = -1,
+        .len = 0,
+        .state = 0,
+    };
+    
+    return iter;
 }
 
 b32 hashmap_iter_is_end(hashmap_iterator* iter) 

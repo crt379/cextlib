@@ -61,10 +61,7 @@ vec* vec_create(u32 vsize, u32 len, u32 cap, void* bind_pp, void* memory);
  * @param vsize 元素大小
  * @return vec*
  */
-inline vec* vec_new(u32 vsize)
-{
-    return vec_create(vsize, 0, 0, NULL, NULL);
-}
+vec* vec_new(u32 vsize);
 
 /**
  * @brief 创建一个空的 vec
@@ -73,10 +70,7 @@ inline vec* vec_new(u32 vsize)
  * @param bind_pp 绑定数据区的指针的指针
  * @return vec*
  */
-inline vec* vec_bind_new(u32 vsize, void* bind_pp)
-{
-    return vec_create(vsize, 0, 0, bind_pp, NULL);
-}
+vec* vec_bind_new(u32 vsize, void* bind_pp);
 
 /**
  * @brief 设置绑定 vec 内存到指针
@@ -183,11 +177,7 @@ int vec_remove(vec* h, size i);
  * @param h 
  * @return int 
  */
-inline void vec_clear(vec* h)
-{
-    if (!h) return;
-    h->len = 0;
-}
+void vec_clear(vec* h);
 
 /**
  * @brief 释放内存

@@ -37,35 +37,12 @@
 }
 
 /**
- * @brief 检查指针数组中的指针是否有为空的
- * 
- * @param ptrs 
- * @param len 
- * @return 有为空的返回1, 否则返回0
- */
-inline b32 check_ptrs(void** ptrs, usize len)
-{
-    for (usize i = 0; i < len; i++) {
-        if (ptrs[i] == NULL) {
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-/**
  * @brief 释放指针数组中的指针
  * 
  * @param ptrs 
  * @param len 
  */
-inline void free_ptrs(void** ptrs, size len)
-{
-    for (usize i = 0; i < len; i++) {
-        free2(ptrs[i]);
-    }
-}
+void free_ptrs(void** ptrs, size len);
 
 /**
  * @brief 检查hashmap操作是否成功
@@ -145,17 +122,13 @@ hashmap* hashmap_new_with_cap(
  * @param cmp 比较函数
  * @return 返回新创建的hashmap指针，如果内存分配失败或参数检查失败则返回NULL
  */
-inline hashmap* hashmap_new(
+hashmap* hashmap_new(
     usize ksize, 
     usize vsize, 
     u64 seed,
 	u64 hasher(const void*, usize, u64), 
     int cmp(const void*, const void*, usize)
-    )
-{
-    assert(ksize > 0 && "ksize must be greater than 0");
-    return hashmap_new_with_cap(INITIAL_BUCKETS, ksize, vsize, seed, hasher, cmp);
-};
+    );
 
 /**
  * @brief hashmap插入key val
@@ -275,14 +248,7 @@ int hashmap_remove(hashmap* map, const void* key);
   * @param map
   * @return 返回hashmap元素个数
   */
-inline size hashmap_count(hashmap* map)
-{
-    if (!map) {
-        return 0;
-    }
-
-    return map->len;
-}
+size hashmap_count(hashmap* map);
 
 /**
   * @brief hashmap清空
@@ -315,10 +281,7 @@ hashmap* hashmap_clone(hashmap* map);
   * @param map
   * @return 1为空 0不为空
   */
-inline b32 hashmap_empty(hashmap* map)
-{
-    return map->len == 0;
-}
+b32 hashmap_empty(hashmap* map);
 
 // ============================================================================
 //  hashmap迭代器
@@ -338,18 +301,7 @@ typedef struct {
   * @param map
   * @return hashmap_iterator
   */
-inline hashmap_iterator hashmap_begin(hashmap* map) 
-{
-    hashmap_iterator iter = {
-        .map = map,
-        .index = 0,
-        .step = 1,
-        .len = 0,
-        .state = 0,
-    };
-    
-    return iter;
-}
+hashmap_iterator hashmap_begin(hashmap* map);
 
 /**
   * @brief hashmap迭代器从结尾开始
@@ -357,18 +309,7 @@ inline hashmap_iterator hashmap_begin(hashmap* map)
   * @param map
   * @return hashmap_iterator
   */
-inline hashmap_iterator hashmap_end(hashmap* map) 
-{
-    hashmap_iterator iter = {
-        .map = map,
-        .index = map->cap - 1,
-        .step = -1,
-        .len = 0,
-        .state = 0,
-    };
-    
-    return iter;
-}
+hashmap_iterator hashmap_end(hashmap* map);
 
 /**
   * @brief hashmap迭代器是否结束

@@ -6,31 +6,11 @@
 #include <malloc.h>
 #include <string.h>
 #include <stdarg.h>
+#include <limits.h>
 
 #define I64_MIN LLONG_MIN
 #define I64_MAX LLONG_MAX
 #define I64STR_SIZE 21
-
-inline void copy(u8 *dst, u8 *src, size len)
-{
-    if (len == 0) {
-        return;
-    }
-    // for (size i = 0; i < len; i++) {
-    //     dst[i] = src[i];
-    // }
-    memcpy(dst, src, len);
-}
-
-inline b32 u8s_eq(u8 *u1, u8* u2, size len)
-{
-    for (size i = 0; i < len; i++) {
-        if (u1[i] != u2[i]) {
-            return 0;
-        }
-    }
-    return 1;
-}
 
 /*
  * @brief i64转字符串

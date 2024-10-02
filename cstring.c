@@ -1,5 +1,29 @@
 #include "cstring.h"
 
+void copy(u8 *dst, u8 *src, size len);
+inline void copy(u8 *dst, u8 *src, size len)
+{
+    if (len == 0) {
+        return;
+    }
+    // for (size i = 0; i < len; i++) {
+    //     dst[i] = src[i];
+    // }
+    memcpy(dst, src, len);
+}
+
+b32 u8s_eq(u8 *u1, u8* u2, size len);
+
+inline b32 u8s_eq(u8 *u1, u8* u2, size len)
+{
+    for (size i = 0; i < len; i++) {
+        if (u1[i] != u2[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 size i64_2_str(u8 *s, i64 value) 
 {
     u8 *p, aux;
