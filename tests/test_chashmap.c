@@ -2,10 +2,10 @@
 #include <assert.h>
 #include <stdio.h>
 
-
-void hashmap_print(hashmap* map)
+void hashmap_print(hashmap *map)
 {
-    if (!map) {
+    if (!map)
+    {
         return;
     }
     printf("map(%p): \n", map);
@@ -24,45 +24,48 @@ void hashmap_print(hashmap* map)
     printf("    cmp: %p\n", map->cmp);
 }
 
-void print_int_map_keys(hashmap* map)
+void print_int_map_keys(hashmap *map)
 {
-    int* key;
+    int *key;
     hashmap_iterator iter = hashmap_begin(map);
 
     printf("============== print_int_map_keys(%p) ===========\n", map);
-    while (!hashmap_iter_is_end(&iter)) {
+    while (!hashmap_iter_is_end(&iter))
+    {
         key = hashmap_iter_key(&iter);
         printf("key: %i\n", *key);
     }
 }
 
-void print_int_map_values(hashmap* map)
+void print_int_map_values(hashmap *map)
 {
-    int* value;
+    int *value;
     hashmap_iterator iter = hashmap_begin(map);
     printf("============== print_int_map_values(%p) ===========\n", map);
-    while (!hashmap_iter_is_end(&iter)) {
+    while (!hashmap_iter_is_end(&iter))
+    {
         value = hashmap_iter_value(&iter);
         printf("value: %i\n", *value);
     }
 }
 
-void print_int_map_items(hashmap* map)
+void print_int_map_items(hashmap *map)
 {
     hashmap_iterator_kv kv;
     hashmap_iterator iter = hashmap_begin(map);
     printf("============== print_int_map_items(%p) ===========\n", map);
-    while (!hashmap_iter_is_end(&iter)) {
+    while (!hashmap_iter_is_end(&iter))
+    {
         kv = hashmap_iter_kv(&iter);
-        printf("key: %i, value: %i\n", *(int*)kv.key, *(int*)kv.value);
+        printf("key: %i, value: %i\n", *(int *)kv.key, *(int *)kv.value);
     }
 }
 
 void test_new()
 {
     printf("============== test_new ===========\n");
-    hashmap* map;
-    
+    hashmap *map;
+
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
     assert(map != NULL);
     assert(map->buckets != NULL);
@@ -82,28 +85,31 @@ void test_new()
 void test_set_and_get()
 {
     printf("============== test_set ===========\n");
-    hashmap* map;
+    hashmap *map;
 
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
-    for (int item = 0; item < 20; item++) {
+    for (int item = 0; item < 20; item++)
+    {
         int r = hashmap_set(map, &item, &item);
     }
     assert(map->len == 20);
-    
-    for (int item = 10; item < 30; item++) {
+
+    for (int item = 10; item < 30; item++)
+    {
         int r = hashmap_set(map, &item, &item);
     }
     assert(map->len == 30);
-    
-    for (int item = 10; item < 30; item++) {
+
+    for (int item = 10; item < 30; item++)
+    {
         int r = hashmap_set(map, &item, &item);
     }
     assert(map->len == 30);
-    
+
     // put
-    assert(*(int*)hashmap_get(map, &(int){1}) == 1);
+    assert(*(int *)hashmap_get(map, &(int){1}) == 1);
     hashmap_set(map, &(int){1}, &(int){2});
-    assert(*(int*)hashmap_get(map, &(int){1}) == 2);
+    assert(*(int *)hashmap_get(map, &(int){1}) == 2);
     hashmap_free(map);
 
     // NULL value
@@ -123,10 +129,10 @@ void test_set_and_get()
     map = hashmap_new(sizeof(int), 0, 123456, NULL, NULL);
     assert(map->values == NULL);
     assert(map->values_swap == NULL);
-    
+
     hashmap_set(map, &(int){1}, NULL);
     assert(map->len == 1);
-    
+
     hashmap_set(map, &(int){2}, NULL);
     assert(map->len == 2);
     assert(hashmap_get(map, &(int){2}) == NULL);
@@ -134,13 +140,14 @@ void test_set_and_get()
     hashmap_free(map);
 }
 
-void test_iteration() 
+void test_iteration()
 {
     printf("============== test_iteration ===========\n");
-    hashmap* map;
+    hashmap *map;
 
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
-    for (int item = 0; item < 20; item++) {
+    for (int item = 0; item < 20; item++)
+    {
         hashmap_set(map, &item, &item);
     }
     print_int_map_keys(map);
@@ -155,10 +162,11 @@ void test_iteration()
 void test_del()
 {
     printf("============== test_del ===========\n");
-    hashmap* map;
-    
+    hashmap *map;
+
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
-    for (int item = 0; item < 20; item++) {
+    for (int item = 0; item < 20; item++)
+    {
         hashmap_set(map, &item, &item);
     }
     assert(map->len == 20);
@@ -171,7 +179,7 @@ void test_del()
 
     hashmap_remove(map, &(int){3});
     assert(map->len == 17);
-    
+
     print_int_map_keys(map);
     hashmap_free(map);
 }
@@ -179,19 +187,19 @@ void test_del()
 void test_update()
 {
     printf("============== test_update ===========\n");
-    hashmap* map;
+    hashmap *map;
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
     hashmap_set(map, &(int){1}, &(int){1});
     hashmap_set(map, &(int){2}, &(int){2});
     hashmap_set(map, &(int){3}, &(int){3});
 
-    hashmap* map2 = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
+    hashmap *map2 = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
     hashmap_set(map2, &(int){1}, &(int){11});
     hashmap_set(map2, &(int){2}, &(int){22});
 
     hashmap_update(map, map2);
     print_int_map_items(map);
-    
+
     hashmap_free(map);
     hashmap_free(map2);
 }
@@ -199,15 +207,15 @@ void test_update()
 void test_clone()
 {
     printf("============== test_clone ===========\n");
-    hashmap* map;
+    hashmap *map;
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
     hashmap_set(map, &(int){1}, &(int){1});
     hashmap_set(map, &(int){2}, &(int){2});
     hashmap_set(map, &(int){3}, &(int){3});
 
-    hashmap* map2 = hashmap_clone(map);
+    hashmap *map2 = hashmap_clone(map);
     hashmap_set(map2, &(int){4}, &(int){5});
-    
+
     print_int_map_items(map);
     print_int_map_items(map2);
 
@@ -218,7 +226,7 @@ void test_clone()
 void test_free()
 {
     printf("============== test_free ===========\n");
-    hashmap* map;
+    hashmap *map;
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
     hashmap_set(map, &(int){1}, &(int){1});
     hashmap_set(map, &(int){2}, &(int){2});
@@ -228,7 +236,6 @@ void test_free()
     hashmap_print(map);
     // hashmap_set(map, &(int){4}, &(int){4});
 }
-
 
 int main()
 {

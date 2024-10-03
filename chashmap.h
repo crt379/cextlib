@@ -3,51 +3,60 @@
 
 #include "ctype.h"
 #include <assert.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
-#define INITIAL_BUCKETS 16
+
+#define INITIAL_BUCKETS   16
 #define HASHMAP_HASH_INIT 2166136261u
-#define LOAD_FACTOR 0.8
-#define RESIZE_ZOOM 1.5
-#define PSL 1
+#define LOAD_FACTOR       0.8
+#define RESIZE_ZOOM       1.5
+#define PSL               1
 
-#define MALLOC_CHECK(p, s, f) { \
-    p = (__typeof__(p))malloc(s); \
-    if (p == NULL) { \
-        f; \
-        return NULL; \
-    } \
-}
+#define MALLOC_CHECK(p, s, f)         \
+    {                                 \
+        p = (__typeof__(p))malloc(s); \
+        if (p == NULL)                \
+        {                             \
+            f;                        \
+            return NULL;              \
+        }                             \
+    }
 
-#define CMALLOC_CHECK(p, c, s, f) { \
-    p = (__typeof__(p))calloc(c, s); \
-    if (p == NULL) { \
-        f; \
-        return NULL; \
-    } \
-}
+#define CMALLOC_CHECK(p, c, s, f)        \
+    {                                    \
+        p = (__typeof__(p))calloc(c, s); \
+        if (p == NULL)                   \
+        {                                \
+            f;                           \
+            return NULL;                 \
+        }                                \
+    }
 
-#define MALLOC_CHECK_COND_NULL(p, s, f, c) { \
-    if (c) { \
-        p = NULL; \
-    } else { \
-        MALLOC_CHECK(p, s, f); \
-    } \
-}
+#define MALLOC_CHECK_COND_NULL(p, s, f, c) \
+    {                                      \
+        if (c)                             \
+        {                                  \
+            p = NULL;                      \
+        }                                  \
+        else                               \
+        {                                  \
+            MALLOC_CHECK(p, s, f);         \
+        }                                  \
+    }
 
 /**
  * @brief 释放指针数组中的指针
- * 
- * @param ptrs 
- * @param len 
+ *
+ * @param ptrs
+ * @param len
  */
-void free_ptrs(void** ptrs, size len);
+void free_ptrs(void **ptrs, size len);
 
 /**
  * @brief 检查hashmap操作是否成功
- * 
- * @param ret 
+ *
+ * @param ret
  * @return b32
  */
 inline b32 hashmap_is_success(int ret)
@@ -59,17 +68,19 @@ inline b32 hashmap_is_success(int ret)
 // hashmap
 // ============================================================================
 
-typedef struct bucket {
+typedef struct bucket
+{
     i64 psl;
-	void* key;
-	void* value;
+    void *key;
+    void *value;
 } bucket;
 
-typedef struct hashmap_header {
+typedef struct hashmap_header
+{
     // 数据
-    bucket* buckets;
-    u8* keys;
-    u8* values;
+    bucket *buckets;
+    u8 *keys;
+    u8 *values;
     // 容量
     usize cap;
     usize len;
@@ -78,23 +89,23 @@ typedef struct hashmap_header {
     const usize vsize;
     const u64 seed;
     // 交换使用
-    u8* keys_swap;
-    u8* values_swap;
+    u8 *keys_swap;
+    u8 *values_swap;
     // 动态函数
-    u64 (*hasher) (const void* data, usize dsize, u64 seed);
-    int (*cmp)(const void* key1, const void* key2, usize ksize);
+    u64 (*hasher)(const void *data, usize dsize, u64 seed);
+    int (*cmp)(const void *key1, const void *key2, usize ksize);
 } hashmap;
 
 /**
-  * @brief hashmap释放
-  * 
-  * @param map
-  */
-void hashmap_free(hashmap* map);
+ * @brief hashmap释放
+ *
+ * @param map
+ */
+void hashmap_free(hashmap *map);
 
 /**
  * @brief 创建hashmap
- * 
+ *
  * @param cap 初始容量
  * @param ksize key大小
  * @param vsize value大小
@@ -103,18 +114,17 @@ void hashmap_free(hashmap* map);
  * @param cmp 比较函数
  * @return 返回新创建的hashmap指针，如果内存分配失败或参数检查失败则返回NULL
  */
-hashmap* hashmap_new_with_cap(
-    usize cap, 
-    usize ksize, 
-    usize vsize, 
-    u64 seed, 
-    u64 hasher(const void*, usize, u64), 
-    int cmp(const void*, const void*, usize)
-    );
+hashmap *hashmap_new_with_cap(
+    usize cap,
+    usize ksize,
+    usize vsize,
+    u64 seed,
+    u64 hasher(const void *, usize, u64),
+    int cmp(const void *, const void *, usize));
 
 /**
  * @brief 创建hashmap
- * 
+ *
  * @param ksize key大小
  * @param vsize value大小
  * @param seed 随机种子
@@ -122,69 +132,68 @@ hashmap* hashmap_new_with_cap(
  * @param cmp 比较函数
  * @return 返回新创建的hashmap指针，如果内存分配失败或参数检查失败则返回NULL
  */
-hashmap* hashmap_new(
-    usize ksize, 
-    usize vsize, 
+hashmap *hashmap_new(
+    usize ksize,
+    usize vsize,
     u64 seed,
-	u64 hasher(const void*, usize, u64), 
-    int cmp(const void*, const void*, usize)
-    );
+    u64 hasher(const void *, usize, u64),
+    int cmp(const void *, const void *, usize));
 
 /**
  * @brief hashmap插入key val
- * 
+ *
  * @param map
  * @param key
  * @param value
  * @return 成功返回0 失败返回非0
  */
-int hashmap_set(hashmap* map, void* key, void* value);
+int hashmap_set(hashmap *map, void *key, void *value);
 
 /**
  * @brief hashmap重新设置大小, resize小于原始容量可能会丢弃某些数据
- * 
- * @param map 
- * @param resize 
+ *
+ * @param map
+ * @param resize
  * @return 成功返回0 失败返回非0
  */
-int hashmap_resize(hashmap* map, usize resize);
+int hashmap_resize(hashmap *map, usize resize);
 
 /**
  * @brief hashmap中存在相同key则更新val返回-1, 不存在则返回开始插入的位置
- * 
+ *
  * @param map
  * @param key
  * @param value
  * @param i hash下标
  * @return 开始查找插入位置的下标
  */
-size hashmap_update_or_insert_index(hashmap* map, void* key, void* value, usize i);
+size hashmap_update_or_insert_index(hashmap *map, void *key, void *value, usize i);
 
 /**
  * @brief hashmap插入key, value为0长度情况, 函数不判断是否相等, 即默认是新的key
- * 
+ *
  * @param map
  * @param key
  * @param hashi hash下标
  * @param i 开始查找插入位置的下标
  * @return
  */
-void hashmap_insert_zero_value(hashmap* map, void* key, usize hashi, usize i);
+void hashmap_insert_zero_value(hashmap *map, void *key, usize hashi, usize i);
 
 /**
  * @brief hashmap插入key, value为NULL情况, 函数不判断是否相等, 即默认是新的key
- * 
+ *
  * @param map
  * @param key
  * @param hashi hash下标
  * @param i 开始查找插入位置的下标
  * @return
  */
-void hashmap_insert_null_value(hashmap* map, void* key, void* value, usize hashi, usize i);
+void hashmap_insert_null_value(hashmap *map, void *key, void *value, usize hashi, usize i);
 
 /**
  * @brief hashmap插入key val, 函数不判断是否相等, 即默认是新的key
- * 
+ *
  * @param map
  * @param key
  * @param value
@@ -192,11 +201,11 @@ void hashmap_insert_null_value(hashmap* map, void* key, void* value, usize hashi
  * @param i 开始查找插入位置的下标
  * @return
  */
-void hashmap_insert_normal_value(hashmap* map, void* key, void* value, usize hashi, usize i);
+void hashmap_insert_normal_value(hashmap *map, void *key, void *value, usize hashi, usize i);
 
 /**
  * @brief hashmap插入key val, 函数不判断是否相等, 即默认是新的key, 根据value是否为NULL和vsize是否为0等走特殊处理流程
- * 
+ *
  * @param map
  * @param key
  * @param value
@@ -204,91 +213,92 @@ void hashmap_insert_normal_value(hashmap* map, void* key, void* value, usize has
  * @param i 开始查找插入位置的下标
  * @return
  */
-void hashmap_insert(hashmap* map, void* key, void* value, usize hashi, usize i);
+void hashmap_insert(hashmap *map, void *key, void *value, usize hashi, usize i);
 
 /**
  * @brief hashmap查找key
- * 
+ *
  * @param map
  * @param key
  * @return 查找到返回val所在指针 否则返回NULL
  */
-void* hashmap_get(hashmap* map, const void* key);
+void *hashmap_get(hashmap *map, const void *key);
 
 /**
  * @brief hashmap查找key, 并拷贝对应值
- * 
+ *
  * @param map
  * @param key
  * @return 查找到返回拷贝val所在指针 否则返回NULL
  */
-void* hashmap_get_cp(hashmap* map, const void* key);
+void *hashmap_get_cp(hashmap *map, const void *key);
 
 /**
  * @brief hashmap查找key是否存在
- * 
+ *
  * @param map
  * @param key
  * @return 存在返回1 否则返回0
  */
-b32 hashmap_exist(hashmap* map, const void* key);
+b32 hashmap_exist(hashmap *map, const void *key);
 
 /**
  * @brief hashmap移除元素
- * 
+ *
  * @param map
  * @param key
  * @return 成功返回0 失败返回非0
  */
-int hashmap_remove(hashmap* map, const void* key);
+int hashmap_remove(hashmap *map, const void *key);
 
 /**
-  * @brief hashmap元素个数
-  * 
-  * @param map
-  * @return 返回hashmap元素个数
-  */
-size hashmap_count(hashmap* map);
+ * @brief hashmap元素个数
+ *
+ * @param map
+ * @return 返回hashmap元素个数
+ */
+size hashmap_count(hashmap *map);
 
 /**
-  * @brief hashmap清空
-  * 
-  * @param map
-  * @return 成功返回0 失败返回非0
-  */
-int hashmap_clear(hashmap* map);
+ * @brief hashmap清空
+ *
+ * @param map
+ * @return 成功返回0 失败返回非0
+ */
+int hashmap_clear(hashmap *map);
 
 /**
-  * @brief hashmap合并
-  * 
-  * @param dst
-  * @param src
-  * @return 成功返回0 失败返回非0
-  */
-int hashmap_update(hashmap* dst, hashmap* src);
+ * @brief hashmap合并
+ *
+ * @param dst
+ * @param src
+ * @return 成功返回0 失败返回非0
+ */
+int hashmap_update(hashmap *dst, hashmap *src);
 
 /**
-  * @brief hashmap克隆
-  * 
-  * @param map
-  * @return 成功返回hashmap指针 失败返回NULL
-  */
-hashmap* hashmap_clone(hashmap* map);
+ * @brief hashmap克隆
+ *
+ * @param map
+ * @return 成功返回hashmap指针 失败返回NULL
+ */
+hashmap *hashmap_clone(hashmap *map);
 
 /**
-  * @brief hashmap是否为空
-  * 
-  * @param map
-  * @return 1为空 0不为空
-  */
-b32 hashmap_empty(hashmap* map);
+ * @brief hashmap是否为空
+ *
+ * @param map
+ * @return 1为空 0不为空
+ */
+b32 hashmap_empty(hashmap *map);
 
 // ============================================================================
 //  hashmap迭代器
 // ============================================================================
 
-typedef struct {
-    const hashmap* map;
+typedef struct
+{
+    const hashmap *map;
     usize index;
     const size step;
     usize len;
@@ -296,57 +306,58 @@ typedef struct {
 } hashmap_iterator;
 
 /**
-  * @brief hashmap迭代器初始化
-  * 
-  * @param map
-  * @return hashmap_iterator
-  */
-hashmap_iterator hashmap_begin(hashmap* map);
+ * @brief hashmap迭代器初始化
+ *
+ * @param map
+ * @return hashmap_iterator
+ */
+hashmap_iterator hashmap_begin(hashmap *map);
 
 /**
-  * @brief hashmap迭代器从结尾开始
-  * 
-  * @param map
-  * @return hashmap_iterator
-  */
-hashmap_iterator hashmap_end(hashmap* map);
+ * @brief hashmap迭代器从结尾开始
+ *
+ * @param map
+ * @return hashmap_iterator
+ */
+hashmap_iterator hashmap_end(hashmap *map);
 
 /**
-  * @brief hashmap迭代器是否结束
-  * 
-  * @param iter
-  * @return 1为结束 0为未结束
-  */
-b32 hashmap_iter_is_end(hashmap_iterator* iter);
+ * @brief hashmap迭代器是否结束
+ *
+ * @param iter
+ * @return 1为结束 0为未结束
+ */
+b32 hashmap_iter_is_end(hashmap_iterator *iter);
 
 /**
-  * @brief hashmap迭代器获取key
-  * 
-  * @param iter
-  * @return void*
-  */
-void* hashmap_iter_key(hashmap_iterator* iter);
+ * @brief hashmap迭代器获取key
+ *
+ * @param iter
+ * @return void*
+ */
+void *hashmap_iter_key(hashmap_iterator *iter);
 
 /**
-  * @brief hashmap迭代器获取value
-  * 
-  * @param iter
-  * @return void*
-  */
-void* hashmap_iter_value(hashmap_iterator* iter);
+ * @brief hashmap迭代器获取value
+ *
+ * @param iter
+ * @return void*
+ */
+void *hashmap_iter_value(hashmap_iterator *iter);
 
-typedef struct {
+typedef struct
+{
     int state;
-    void* key;
-    void* value;
+    void *key;
+    void *value;
 } hashmap_iterator_kv;
 
 /**
-  * @brief hashmap迭代器获取key和value
-  * 
-  * @param iter
-  * @return hashmap_iterator_kv
-  */
-hashmap_iterator_kv hashmap_iter_kv(hashmap_iterator* iter);
+ * @brief hashmap迭代器获取key和value
+ *
+ * @param iter
+ * @return hashmap_iterator_kv
+ */
+hashmap_iterator_kv hashmap_iter_kv(hashmap_iterator *iter);
 
 #endif // __CHASHMAP_H
