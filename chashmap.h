@@ -86,6 +86,8 @@ typedef struct hashmap_header
     usize resize;
     const usize ksize;
     const usize vsize;
+    const usize kdsize;
+    const usize vdsize;
     const u64 seed;
     // 交换使用, null key 值
     u8 *keys_swap;
@@ -156,29 +158,6 @@ int hashmap_set(hashmap *map, void *key, void *value);
  * @return 成功返回0 失败返回非0
  */
 int hashmap_resize(hashmap *map, usize resize);
-
-/**
- * @brief hashmap中存在相同key则更新val返回-1, 不存在则返回开始插入的位置
- *
- * @param map
- * @param key
- * @param value
- * @param i hash下标
- * @return 开始查找插入位置的下标
- */
-size hashmap_update_or_insert_index(hashmap *map, void *key, void *value, usize i);
-
-/**
- * @brief hashmap插入key val, 函数不判断是否相等, 即默认是新的key, 根据value是否为NULL和vsize是否为0等走特殊处理流程
- *
- * @param map
- * @param key
- * @param value
- * @param i 开始查找插入位置的下标
- * @param psl
- * @return
- */
-void hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl);
 
 /**
  * @brief hashmap查找key

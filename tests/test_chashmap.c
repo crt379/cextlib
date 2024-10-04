@@ -91,19 +91,20 @@ void test_set_and_get()
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
     for (int item = 0; item < 20; item++)
     {
-        int r = hashmap_set(map, &item, &item);
+        // printf("item: %i, map len: %td, map rsize: %td\n", item, map->len, map->resize);
+        hashmap_set(map, &item, &item);
     }
     assert(map->len == 20);
 
     for (int item = 10; item < 30; item++)
     {
-        int r = hashmap_set(map, &item, &item);
+        hashmap_set(map, &item, &item);
     }
     assert(map->len == 30);
 
     for (int item = 10; item < 30; item++)
     {
-        int r = hashmap_set(map, &item, &item);
+        hashmap_set(map, &item, &item);
     }
     assert(map->len == 30);
 
@@ -128,8 +129,8 @@ void test_set_and_get()
 
     // zero value
     map = hashmap_new(sizeof(int), 0, 123456, NULL, NULL);
-    assert(map->values == NULL);
-    assert(map->values_swap == NULL);
+    assert(map->values != NULL);
+    assert(map->values_swap != NULL);
 
     hashmap_set(map, &(int){1}, NULL);
     assert(map->len == 1);
