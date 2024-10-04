@@ -1,6 +1,7 @@
 #include "../chashmap.h"
 #include <assert.h>
 #include <stdio.h>
+#include <time.h>
 
 void hashmap_print(hashmap *map)
 {
@@ -138,6 +139,11 @@ void test_set_and_get()
     assert(hashmap_get(map, &(int){2}) == NULL);
     assert(hashmap_exist(map, &(int){2}));
     hashmap_free(map);
+
+    // map = hashmap_new(sizeof(int), 0, 123456, NULL, NULL);
+    // hashmap_set(map, NULL, &(int){1});
+    // assert(map->len == 1);
+    // hashmap_free(map);
 }
 
 void test_iteration()
