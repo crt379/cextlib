@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <string.h>
 
-
 #define INITIAL_BUCKETS   16
 #define HASHMAP_HASH_INIT 2166136261u
 #define LOAD_FACTOR       0.8
@@ -88,7 +87,7 @@ typedef struct hashmap_header
     const usize ksize;
     const usize vsize;
     const u64 seed;
-    // 交换使用
+    // 交换使用, null key 值
     u8 *keys_swap;
     u8 *values_swap;
     // 动态函数
@@ -170,50 +169,16 @@ int hashmap_resize(hashmap *map, usize resize);
 size hashmap_update_or_insert_index(hashmap *map, void *key, void *value, usize i);
 
 /**
- * @brief hashmap插入key, value为0长度情况, 函数不判断是否相等, 即默认是新的key
- *
- * @param map
- * @param key
- * @param hashi hash下标
- * @param i 开始查找插入位置的下标
- * @return
- */
-void hashmap_insert_zero_value(hashmap *map, void *key, usize hashi, usize i);
-
-/**
- * @brief hashmap插入key, value为NULL情况, 函数不判断是否相等, 即默认是新的key
- *
- * @param map
- * @param key
- * @param hashi hash下标
- * @param i 开始查找插入位置的下标
- * @return
- */
-void hashmap_insert_null_value(hashmap *map, void *key, void *value, usize hashi, usize i);
-
-/**
- * @brief hashmap插入key val, 函数不判断是否相等, 即默认是新的key
- *
- * @param map
- * @param key
- * @param value
- * @param hashi hash下标
- * @param i 开始查找插入位置的下标
- * @return
- */
-void hashmap_insert_normal_value(hashmap *map, void *key, void *value, usize hashi, usize i);
-
-/**
  * @brief hashmap插入key val, 函数不判断是否相等, 即默认是新的key, 根据value是否为NULL和vsize是否为0等走特殊处理流程
  *
  * @param map
  * @param key
  * @param value
- * @param hashi hash下标
  * @param i 开始查找插入位置的下标
+ * @param psl
  * @return
  */
-void hashmap_insert(hashmap *map, void *key, void *value, usize hashi, usize i);
+void hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl);
 
 /**
  * @brief hashmap查找key

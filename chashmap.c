@@ -1,4 +1,8 @@
 #include "chashmap.h"
+#include "ctype.h"
+
+#define SWAP_CAP 2 // swap key value 的容量，不只是用于交换
+#define SWAP_LEN 2 // 交换使用的长度
 
 /**
  * @brief FNV-1a hash
@@ -91,8 +95,8 @@ hashmap *hashmap_new_with_cap(
     MALLOC_CHECK(map->keys, ksize * map->cap, hashmap_free(map));
     MALLOC_CHECK_COND_NULL(map->values, vsize * map->cap, hashmap_free(map), vsize == 0);
 
-    MALLOC_CHECK(map->keys_swap, ksize * 2, hashmap_free(map));
-    MALLOC_CHECK_COND_NULL(map->values_swap, vsize * 2, hashmap_free(map), vsize == 0);
+    MALLOC_CHECK(map->keys_swap, ksize * SWAP_CAP, hashmap_free(map));
+    MALLOC_CHECK_COND_NULL(map->values_swap, vsize * SWAP_CAP, hashmap_free(map), vsize == 0);
 
     *(usize *)&map->ksize = ksize;
     *(usize *)&map->vsize = vsize;
@@ -160,6 +164,52 @@ int hashmap_resize(hashmap *map, usize resize)
     return 0;
 }
 
+usize hashmap_hash_index(hashmap *map, u64 hash)
+{
+    return hash % map->cap;
+}
+
+static void _hashmap_put_key(hashmap *map, bucket *b, void *key, usize i)
+{
+    u8 *ptr = map->keys + (i * map->ksize);
+    memcpy(ptr, key, map->ksize);
+    b->key = ptr;
+}
+
+static void _hashmap_put_zero_value(hashmap *map, bucket *b, void *value, usize i)
+{
+    b->value = NULL;
+}
+
+static void _hashmap_put_null_value(hashmap *map, bucket *b, void *value, usize i)
+{
+    u8 *ptr = map->values + (i * map->vsize);
+    memset(ptr, 0, map->vsize);
+    b->value = NULL;
+}
+
+static void _hashmap_put_normal_value(hashmap *map, bucket *b, void *value, usize i)
+{
+    u8 *ptr = map->values + (i * map->vsize);
+    memcpy(ptr, value, map->vsize);
+    b->value = ptr;
+}
+
+static void _hashmap_put_value(hashmap *map, bucket *b, void *value, usize i)
+{
+    if (map->vsize == 0)
+    {
+        return _hashmap_put_zero_value(map, b, value, i);
+    }
+
+    if (!value)
+    {
+        return _hashmap_put_null_value(map, b, value, i);
+    }
+
+    _hashmap_put_normal_value(map, b, value, i);
+}
+
 size hashmap_update_or_insert_index(hashmap *map, void *key, void *value, usize i)
 {
     u64 psl = PSL;
@@ -181,168 +231,243 @@ size hashmap_update_or_insert_index(hashmap *map, void *key, void *value, usize 
 
         if (map->cmp(b->key, key, map->ksize) == 0)
         {
-            u8 *ptr;
-            ptr = map->keys + (i * map->ksize);
-            memcpy(ptr, key, map->ksize);
-            b->key = ptr;
-
-            ptr = map->values + (i * map->vsize);
-            if (value)
-            {
-                memcpy(ptr, value, map->vsize);
-                b->value = ptr;
-            }
-            else
-            {
-                memset(ptr, 0, map->vsize);
-                b->value = NULL;
-            }
+            _hashmap_put_key(map, b, key, i);
+            _hashmap_put_value(map, b, value, i);
             return -1;
         }
 
         psl++;
-        i = (i + 1) % map->cap;
+        i = hashmap_hash_index(map, i + 1);
     }
 }
 
-#define __HASHMAP_INSERT(BREAK_VAL_P_H, SWAP_VAL_P_H)                \
-    {                                                                \
-        u64 psl;                                                     \
-        if (hashi > i)                                               \
-        {                                                            \
-            psl = map->cap + i - hashi + PSL;                        \
-        }                                                            \
-        else                                                         \
-        {                                                            \
-            psl = i - hashi + PSL;                                   \
-        }                                                            \
-                                                                     \
-        bucket *b = NULL;                                            \
-        usize swap_l = 2;                                            \
-        usize swap_c = 0;                                            \
-        while (1)                                                    \
-        {                                                            \
-            b = &map->buckets[i];                                    \
-                                                                     \
-            if (b->psl == 0)                                         \
-            {                                                        \
-                u8 *ptr;                                             \
-                map->len++;                                          \
-                b->psl = psl;                                        \
-                ptr = map->keys + (i * map->ksize);                  \
-                memcpy(ptr, key, map->ksize);                        \
-                b->key = ptr;                                        \
-                                                                     \
-                BREAK_VAL_P_H                                        \
-                break;                                               \
-            }                                                        \
-                                                                     \
-            if (psl > b->psl)                                        \
-            {                                                        \
-                u8 *ptr;                                             \
-                u64 tmp_psl;                                         \
-                                                                     \
-                usize swap_i = swap_c++ % swap_l;                    \
-                u8 *swap_k = map->keys_swap + (map->ksize * swap_i); \
-                ptr = map->keys + (i * map->ksize);                  \
-                memcpy(swap_k, ptr, map->ksize);                     \
-                memcpy(ptr, key, map->ksize);                        \
-                b->key = ptr;                                        \
-                key = swap_k;                                        \
-                                                                     \
-                SWAP_VAL_P_H                                         \
-                                                                     \
-                tmp_psl = b->psl;                                    \
-                psl = b->psl;                                        \
-                b->psl = tmp_psl;                                    \
-            }                                                        \
-                                                                     \
-            psl++;                                                   \
-            i = (i + 1) % map->cap;                                  \
-        }                                                            \
-    }
-
-void hashmap_insert_zero_value(hashmap *map, void *key, usize hashi, usize i)
+static void *_hashmap_put_key_by_swap(hashmap *map, bucket *b, void *key, usize i, usize swap_i)
 {
-#define __BREAK_VAL_P_H \
-    b->value = NULL;
-
-#define ___SWAP_VAL_P_H __BREAK_VAL_P_H
-
-    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
-#undef __BREAK_VAL_P_H
-#undef ___SWAP_VAL_P_H
+    u8 *ptr = ptr = map->keys + (i * map->ksize);
+    u8 *swap_v = map->keys_swap + (map->ksize * swap_i);
+    memcpy(swap_v, ptr, map->ksize);
+    memcpy(ptr, key, map->ksize);
+    b->key = ptr;
+    return swap_v;
 }
 
-void hashmap_insert_null_value(hashmap *map, void *key, void *value, usize hashi, usize i)
+static void *_hashmap_put_zero_value_by_swap(hashmap *map, bucket *b, void *value, usize i, usize swap_i)
 {
-#define __BREAK_VAL_P_H                   \
-    ptr = map->values + (i * map->vsize); \
-    memset(ptr, 0, map->vsize);           \
-    b->value = NULL;
-
-#define ___SWAP_VAL_P_H                                    \
-    u8 *swap_v = map->values_swap + (map->vsize * swap_i); \
-    ptr = map->values + (i * map->vsize);                  \
-    memcpy(swap_v, ptr, map->vsize);                       \
-    memset(ptr, 0, map->vsize);                            \
-    b->value = NULL;                                       \
-    value = swap_v;
-
-    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
-#undef __BREAK_VAL_P_H
-#undef ___SWAP_VAL_P_H
+    _hashmap_put_zero_value(map, b, NULL, i);
+    return NULL;
 }
 
-void hashmap_insert_normal_value(hashmap *map, void *key, void *value, usize hashi, usize i)
+static void *_hashmap_put_null_value_by_swap(hashmap *map, bucket *b, void *value, usize i, usize swap_i)
 {
-#define __BREAK_VAL_P_H                   \
-    ptr = map->values + (i * map->vsize); \
-    memcpy(ptr, value, map->vsize);       \
+    u8 *ptr = ptr = map->values + (i * map->vsize);
+    u8 *swap_v = map->values_swap + (map->vsize * swap_i);
+    memcpy(swap_v, ptr, map->vsize);
+    memset(ptr, 0, map->vsize);
+    b->value = NULL;
+    return swap_v;
+}
+
+static void *_hashmap_put_normal_value_by_swap(hashmap *map, bucket *b, void *value, usize i, usize swap_i)
+{
+    u8 *ptr = map->values + (i * map->vsize);
+    u8 *swap_v = map->values_swap + (map->vsize * swap_i);
+    memcpy(swap_v, ptr, map->vsize);
+    memcpy(ptr, value, map->vsize);
     b->value = ptr;
-
-#define ___SWAP_VAL_P_H                                    \
-    u8 *swap_v = map->values_swap + (map->vsize * swap_i); \
-    ptr = map->values + (i * map->vsize);                  \
-    memcpy(swap_v, ptr, map->vsize);                       \
-    memcpy(ptr, value, map->vsize);                        \
-    b->value = ptr;                                        \
-    value = swap_v;
-
-    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
-#undef __BREAK_VAL_P_H
-#undef ___SWAP_VAL_P_H
+    return swap_v;
 }
 
-void hashmap_insert(hashmap *map, void *key, void *value, usize hashi, usize i)
+static void *_hashmap_put_value_by_swap(hashmap *map, bucket *b, void *value, usize i, usize swap_i)
 {
     if (map->vsize == 0)
     {
-        return hashmap_insert_zero_value(map, key, hashi, i);
+        return _hashmap_put_zero_value_by_swap(map, b, value, i, swap_i);
+    }
+
+    if (!value)
+    {
+        return _hashmap_put_null_value_by_swap(map, b, value, i, swap_i);
+    }
+
+    return _hashmap_put_normal_value_by_swap(map, b, value, i, swap_i);
+}
+
+typedef struct
+{
+    u64 psl;
+    usize i;
+    void *key;
+    void *value;
+} _hashmap_disp_insert_t;
+
+static _hashmap_disp_insert_t _hashmap_displacement_instert(hashmap *map, void *key, void *value, usize i, u64 psl)
+{
+    bucket *b = NULL;
+    usize swap_len = SWAP_LEN;
+    usize swap_cur = 0;
+    _hashmap_disp_insert_t ret = {0};
+
+    while (1)
+    {
+        b = &map->buckets[i];
+
+        if (b->psl == 0)
+        {
+            b->psl = psl;
+            _hashmap_put_key(map, b, key, i);
+            _hashmap_put_value(map, b, value, i);
+            return ret;
+        }
+
+        if (psl > b->psl)
+        {
+            usize swap_i = swap_cur++ % swap_len;
+            ret.key = _hashmap_put_key_by_swap(map, b, key, i, swap_i);
+            ret.value = _hashmap_put_value_by_swap(map, b, value, i, swap_i);
+
+            ret.psl = b->psl;
+            b->psl = psl;
+            ret.i = hashmap_hash_index(map, i + 1);
+            return ret;
+        }
+
+        psl++;
+        i = hashmap_hash_index(map, i + 1);
+    }
+}
+
+// hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl)
+#define __HASHMAP_INSERT(BREAK_VAL_P_H, SWAP_VAL_P_H)                   \
+    {                                                                   \
+        bucket *b = NULL;                                               \
+        usize swap_len = SWAP_LEN;                                      \
+        usize swap_cur = 0;                                             \
+        while (1)                                                       \
+        {                                                               \
+            b = &map->buckets[i];                                       \
+                                                                        \
+            if (b->psl == 0)                                            \
+            {                                                           \
+                map->len++;                                             \
+                b->psl = psl;                                           \
+                _hashmap_put_key(map, b, key, i);                       \
+                                                                        \
+                BREAK_VAL_P_H                                           \
+                break;                                                  \
+            }                                                           \
+                                                                        \
+            if (psl > b->psl)                                           \
+            {                                                           \
+                usize swap_i = swap_cur++ % swap_len;                   \
+                key = _hashmap_put_key_by_swap(map, b, key, i, swap_i); \
+                                                                        \
+                SWAP_VAL_P_H                                            \
+                                                                        \
+                u64 tmp_psl = b->psl;                                   \
+                b->psl = psl;                                           \
+                psl = tmp_psl;                                          \
+            }                                                           \
+                                                                        \
+            psl++;                                                      \
+            i = hashmap_hash_index(map, i + 1);                         \
+        }                                                               \
+    }
+
+/**
+ * @brief hashmap插入key, value为0长度情况, 函数不判断是否相等, 即默认是新的key
+ *
+ * @param map
+ * @param key
+ * @param value
+ * @param hashi hash下标
+ * @param i 开始查找插入位置的下标
+ * @return
+ */
+static void hashmap_insert_zero_value(hashmap *map, void *key, void *value, usize i, u64 psl)
+{
+#define __BREAK_VAL_P_H _hashmap_put_zero_value(map, b, NULL, i);
+
+#define ___SWAP_VAL_P_H _hashmap_put_zero_value(map, b, NULL, i);
+
+    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
+#undef __BREAK_VAL_P_H
+#undef ___SWAP_VAL_P_H
+}
+
+/**
+ * @brief hashmap插入key, value为NULL情况, 函数不判断是否相等, 即默认是新的key
+ *
+ * @param map
+ * @param key
+ * @param hashi hash下标
+ * @param i 开始查找插入位置的下标
+ * @return
+ */
+static void hashmap_insert_null_value(hashmap *map, void *key, void *value, usize i, u64 psl)
+{
+#define __BREAK_VAL_P_H _hashmap_put_null_value(map, b, value, i);
+
+#define ___SWAP_VAL_P_H value = _hashmap_put_null_value_by_swap(map, b, value, i, swap_i);
+
+    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
+#undef __BREAK_VAL_P_H
+#undef ___SWAP_VAL_P_H
+}
+
+/**
+ * @brief hashmap插入key val, 函数不判断是否相等, 即默认是新的key
+ *
+ * @param map
+ * @param key
+ * @param value
+ * @param hashi hash下标
+ * @param i 开始查找插入位置的下标
+ * @return
+ */
+static void hashmap_insert_normal_value(hashmap *map, void *key, void *value, usize i, u64 psl)
+{
+#define __BREAK_VAL_P_H _hashmap_put_normal_value(map, b, value, i);
+
+#define ___SWAP_VAL_P_H value = _hashmap_put_normal_value_by_swap(map, b, value, i, swap_i);
+
+    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
+#undef __BREAK_VAL_P_H
+#undef ___SWAP_VAL_P_H
+}
+
+void hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl)
+{
+    if (map->vsize == 0)
+    {
+        return hashmap_insert_zero_value(map, key, value, i, psl);
     }
 
     if (value == NULL)
     {
-        return hashmap_insert_null_value(map, key, value, hashi, i);
+        return hashmap_insert_null_value(map, key, value, i, psl);
     }
 
-    return hashmap_insert_normal_value(map, key, value, hashi, i);
+    return hashmap_insert_normal_value(map, key, value, i, psl);
+}
+
+static u64 _hashmap_psl_by_hashi_i(hashmap *map, usize hashi, usize i)
+{
+    return (hashi > i) ? map->cap + i - hashi + PSL : i - hashi + PSL;
 }
 
 int hashmap_set(hashmap *map, void *key, void *value)
 {
-    if (!map || !key)
+    if (!map)
     {
         return 1;
     }
 
-    size insei;
-    u64 khash = map->hasher(key, map->ksize, map->seed);
-    usize hashi = khash % map->cap;
+    u64 hash = map->hasher(key, map->ksize, map->seed);
+    usize hash_index = hashmap_hash_index(map, hash);
 
     // 查找更新 或 查找可以插入的位置
-    insei = hashmap_update_or_insert_index(map, key, value, hashi);
-    if (insei == -1)
+    size inse_index = hashmap_update_or_insert_index(map, key, value, hash_index);
+    if (inse_index < 0)
     {
         return 0;
     }
@@ -353,12 +478,12 @@ int hashmap_set(hashmap *map, void *key, void *value)
         {
             return 1;
         }
-        hashi = khash % map->cap;
-        hashmap_insert(map, key, value, hashi, hashi);
+        hash_index = hashmap_hash_index(map, hash);
+        hashmap_insert(map, key, value, hash_index, _hashmap_psl_by_hashi_i(map, hash_index, hash_index));
     }
     else
     {
-        hashmap_insert(map, key, value, hashi, insei);
+        hashmap_insert(map, key, value, inse_index, _hashmap_psl_by_hashi_i(map, hash_index, inse_index));
     }
 
     return 0;
@@ -366,7 +491,7 @@ int hashmap_set(hashmap *map, void *key, void *value)
 
 void *hashmap_get(hashmap *map, const void *key)
 {
-    if (!map || !key || map->len == 0)
+    if (!map || map->len == 0)
     {
         return NULL;
     }
@@ -411,7 +536,7 @@ void *hashmap_get_cp(hashmap *map, const void *key)
 
 b32 hashmap_exist(hashmap *map, const void *key)
 {
-    if (!map || !key || map->len == 0)
+    if (!map || map->len == 0)
     {
         return 0;
     }
