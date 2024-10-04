@@ -4,6 +4,13 @@
 #define SWAP_CAP 2 // swap key value 的容量，不只是用于交换
 #define SWAP_LEN 2 // 交换使用的长度
 
+#define VALUE_SWAP(a, b)       \
+    {                          \
+        __typeof__(a) tmp = a; \
+        a = b;                 \
+        b = tmp;               \
+    }
+
 /**
  * @brief FNV-1a hash
  *
@@ -298,156 +305,56 @@ typedef struct
     usize i;
     void *key;
     void *value;
+    usize swap_i;
 } _hashmap_disp_insert_t;
 
-static _hashmap_disp_insert_t _hashmap_displacement_instert(hashmap *map, void *key, void *value, usize i, u64 psl)
+static _hashmap_disp_insert_t _hashmap_displacement_instert(hashmap *map, _hashmap_disp_insert_t disp_insert)
 {
     bucket *b = NULL;
-    usize swap_len = SWAP_LEN;
-    usize swap_cur = 0;
-    _hashmap_disp_insert_t ret = {0};
-
     while (1)
     {
-        b = &map->buckets[i];
+        b = &map->buckets[disp_insert.i];
 
         if (b->psl == 0)
         {
-            b->psl = psl;
-            _hashmap_put_key(map, b, key, i);
-            _hashmap_put_value(map, b, value, i);
-            return ret;
+            _hashmap_put_key(map, b, disp_insert.key, disp_insert.i);
+            _hashmap_put_value(map, b, disp_insert.value, disp_insert.i);
+
+            b->psl = disp_insert.psl;
+            disp_insert.psl = 0;
+            map->len++;
+            return disp_insert;
         }
 
-        if (psl > b->psl)
+        if (disp_insert.psl > b->psl)
         {
-            usize swap_i = swap_cur++ % swap_len;
-            ret.key = _hashmap_put_key_by_swap(map, b, key, i, swap_i);
-            ret.value = _hashmap_put_value_by_swap(map, b, value, i, swap_i);
+            usize swap_i = disp_insert.swap_i++ % SWAP_LEN;
+            disp_insert.key = _hashmap_put_key_by_swap(map, b, disp_insert.key, disp_insert.i, swap_i);
+            disp_insert.value = _hashmap_put_value_by_swap(map, b, disp_insert.value, disp_insert.i, swap_i);
 
-            ret.psl = b->psl;
-            b->psl = psl;
-            ret.i = hashmap_hash_index(map, i + 1);
-            return ret;
+            VALUE_SWAP(b->psl, disp_insert.psl);
+            disp_insert.i = hashmap_hash_index(map, disp_insert.i + 1);
+            return disp_insert;
         }
 
-        psl++;
-        i = hashmap_hash_index(map, i + 1);
+        disp_insert.psl++;
+        disp_insert.i = hashmap_hash_index(map, disp_insert.i + 1);
     }
-}
-
-// hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl)
-#define __HASHMAP_INSERT(BREAK_VAL_P_H, SWAP_VAL_P_H)                   \
-    {                                                                   \
-        bucket *b = NULL;                                               \
-        usize swap_len = SWAP_LEN;                                      \
-        usize swap_cur = 0;                                             \
-        while (1)                                                       \
-        {                                                               \
-            b = &map->buckets[i];                                       \
-                                                                        \
-            if (b->psl == 0)                                            \
-            {                                                           \
-                map->len++;                                             \
-                b->psl = psl;                                           \
-                _hashmap_put_key(map, b, key, i);                       \
-                                                                        \
-                BREAK_VAL_P_H                                           \
-                break;                                                  \
-            }                                                           \
-                                                                        \
-            if (psl > b->psl)                                           \
-            {                                                           \
-                usize swap_i = swap_cur++ % swap_len;                   \
-                key = _hashmap_put_key_by_swap(map, b, key, i, swap_i); \
-                                                                        \
-                SWAP_VAL_P_H                                            \
-                                                                        \
-                u64 tmp_psl = b->psl;                                   \
-                b->psl = psl;                                           \
-                psl = tmp_psl;                                          \
-            }                                                           \
-                                                                        \
-            psl++;                                                      \
-            i = hashmap_hash_index(map, i + 1);                         \
-        }                                                               \
-    }
-
-/**
- * @brief hashmap插入key, value为0长度情况, 函数不判断是否相等, 即默认是新的key
- *
- * @param map
- * @param key
- * @param value
- * @param hashi hash下标
- * @param i 开始查找插入位置的下标
- * @return
- */
-static void hashmap_insert_zero_value(hashmap *map, void *key, void *value, usize i, u64 psl)
-{
-#define __BREAK_VAL_P_H _hashmap_put_zero_value(map, b, NULL, i);
-
-#define ___SWAP_VAL_P_H _hashmap_put_zero_value(map, b, NULL, i);
-
-    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
-#undef __BREAK_VAL_P_H
-#undef ___SWAP_VAL_P_H
-}
-
-/**
- * @brief hashmap插入key, value为NULL情况, 函数不判断是否相等, 即默认是新的key
- *
- * @param map
- * @param key
- * @param hashi hash下标
- * @param i 开始查找插入位置的下标
- * @return
- */
-static void hashmap_insert_null_value(hashmap *map, void *key, void *value, usize i, u64 psl)
-{
-#define __BREAK_VAL_P_H _hashmap_put_null_value(map, b, value, i);
-
-#define ___SWAP_VAL_P_H value = _hashmap_put_null_value_by_swap(map, b, value, i, swap_i);
-
-    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
-#undef __BREAK_VAL_P_H
-#undef ___SWAP_VAL_P_H
-}
-
-/**
- * @brief hashmap插入key val, 函数不判断是否相等, 即默认是新的key
- *
- * @param map
- * @param key
- * @param value
- * @param hashi hash下标
- * @param i 开始查找插入位置的下标
- * @return
- */
-static void hashmap_insert_normal_value(hashmap *map, void *key, void *value, usize i, u64 psl)
-{
-#define __BREAK_VAL_P_H _hashmap_put_normal_value(map, b, value, i);
-
-#define ___SWAP_VAL_P_H value = _hashmap_put_normal_value_by_swap(map, b, value, i, swap_i);
-
-    __HASHMAP_INSERT(__BREAK_VAL_P_H, ___SWAP_VAL_P_H);
-#undef __BREAK_VAL_P_H
-#undef ___SWAP_VAL_P_H
 }
 
 void hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl)
 {
-    if (map->vsize == 0)
-    {
-        return hashmap_insert_zero_value(map, key, value, i, psl);
-    }
+    _hashmap_disp_insert_t disp_insert = {
+        .psl = psl,
+        .i = i,
+        .key = key,
+        .value = value,
+        .swap_i = 0};
 
-    if (value == NULL)
+    do
     {
-        return hashmap_insert_null_value(map, key, value, i, psl);
-    }
-
-    return hashmap_insert_normal_value(map, key, value, i, psl);
+        disp_insert = _hashmap_displacement_instert(map, disp_insert);
+    } while (disp_insert.psl > 0);
 }
 
 static u64 _hashmap_psl_by_hashi_i(hashmap *map, usize hashi, usize i)
