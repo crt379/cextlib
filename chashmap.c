@@ -209,8 +209,8 @@ int hashmap_resize(hashmap *map, usize resize)
         if (old_buckets[i].psl > 0)
         {
             hashmap_set(map,
-                        mem_get_val(old_keys, map->kdsize, i),
-                        mem_get_val(old_values, map->vdsize, i));
+                        mem_get_val(old_keys, _hashmap_key_size(map), i),
+                        mem_get_val(old_values, _hashmap_val_size(map), i));
             if (map->len == map->resize)
             {
                 break;
@@ -384,15 +384,15 @@ _hashmap_insert_t hashmap_find_put_insert_index(hashmap *map, void *key, void *v
     };
     usize psl = PSL;
 
-    bucket *b = &map->buckets[i];
-    if (b->psl == 0)
+    bucket b = map->buckets[i];
+    if (b.psl == 0)
     {
         return insert_info;
     }
 
-    if (!key || b->psl == NULL_KEY_PSL)
+    if (!key || b.psl == NULL_KEY_PSL)
     {
-        if (!key && b->psl == NULL_KEY_PSL)
+        if (!key && b.psl == NULL_KEY_PSL)
         {
             insert_info.i = i;
             insert_info.is_update = 1;
@@ -412,20 +412,20 @@ _hashmap_insert_t hashmap_find_put_insert_index(hashmap *map, void *key, void *v
 
     while (1)
     {
-        b = &map->buckets[i];
+        b = map->buckets[i];
 
-        if (insert_info.psl == PSL && psl > b->psl)
+        if (insert_info.psl == PSL && psl > b.psl)
         {
             insert_info.i = i;
             insert_info.psl = psl;
         }
 
-        if (b->psl == 0)
+        if (b.psl == 0)
         {
             return insert_info;
         }
 
-        if (map->cmp(hashmap_key(map, i), key, map->ksize) == 0)
+        if (map->cmp(hashmap_key(map, i), key, _hashmap_key_size(map)) == 0)
         {
             insert_info.i = i;
             insert_info.is_update = 1;
@@ -471,7 +471,7 @@ int hashmap_set(hashmap *map, void *key, void *value)
         return 1;
     }
 
-    u64 hash = key ? map->hasher(key, map->ksize, map->seed) : NULL_KEY_HASH;
+    u64 hash = key ? map->hasher(key, _hashmap_key_size(map), map->seed) : NULL_KEY_HASH;
     usize hash_index = hashmap_hash_index(map, hash);
 
     // 查找更新 或 查找可以插入的位置
@@ -542,7 +542,6 @@ b32 hashmap_exist(hashmap *map, const void *key)
         return 0;
     }
 
-    bucket *b = NULL;
     usize i = map->hasher(key, _hashmap_key_size(map), map->seed) % map->cap;
     while (1)
     {
@@ -575,12 +574,10 @@ int hashmap_remove(hashmap *map, const void *key)
         return 0;
     }
 
-    bucket *b = NULL;
     usize i = map->hasher(key, _hashmap_key_size(map), map->seed) % map->cap;
     while (1)
     {
-        b = &map->buckets[i];
-        if (b->psl == 0)
+        if (map->buckets[i].psl == 0)
         {
             return 0;
         }
@@ -594,7 +591,8 @@ int hashmap_remove(hashmap *map, const void *key)
         i = (i + 1) % map->cap;
     }
 
-    bucket *pre_b = b;
+    bucket *b, *pre_b;
+    pre_b = &map->buckets[i];
     void *pre_k = hashmap_key(map, i);
     void *pre_v = hashmap_value(map, i);
     void *cur_k = NULL;
@@ -756,10 +754,9 @@ void *hashmap_iter_key(hashmap_iterator *iter)
     const hashmap *map = iter->map;
     do
     {
-        bucket *b = &map->buckets[iter->index];
-        if (b->psl > 0)
+        if (map->buckets[iter->index].psl > 0)
         {
-            void *key = hashmap_key(iter->map, iter->index);
+            void *key = hashmap_key(map, iter->index);
             iter->index += iter->step;
             iter->len += 1;
             return key;
@@ -780,10 +777,9 @@ void *hashmap_iter_value(hashmap_iterator *iter)
     const hashmap *map = iter->map;
     do
     {
-        bucket *b = &map->buckets[iter->index];
-        if (b->psl > 0)
+        if (map->buckets[iter->index].psl > 0)
         {
-            void *val = hashmap_value(iter->map, iter->index);
+            void *val = hashmap_value(map, iter->index);
             iter->index += iter->step;
             iter->len += 1;
             return val;
@@ -805,12 +801,11 @@ hashmap_iterator_kv hashmap_iter_kv(hashmap_iterator *iter)
     const hashmap *map = iter->map;
     do
     {
-        bucket *b = &map->buckets[iter->index];
-        if (b->psl > 0)
+        if (map->buckets[iter->index].psl > 0)
         {
             kv.state = 0;
-            kv.key = hashmap_key(iter->map, iter->index);
-            kv.value = hashmap_key(iter->map, iter->index);
+            kv.key = hashmap_key(map, iter->index);
+            kv.value = hashmap_key(map, iter->index);
             iter->index += iter->step;
             iter->len += 1;
             return kv;
