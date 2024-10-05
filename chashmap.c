@@ -3,7 +3,7 @@
 
 #define SWAP_CAP      2 // swap key value 的容量，不只是用于交换
 #define SWAP_LEN      2 // 交换使用的长度
-#define PTR_LEN       sizeof(void *)
+#define PTR_LEN       sizeof(uintptr_t)
 #define NULL_KEY_HASH 0
 #define NULL_KEY_PSL  UINT64_MAX
 
@@ -13,6 +13,11 @@
         a = b;                 \
         b = tmp;               \
     }
+
+static inline void *mem_get_val(u8 *mem, usize vsize, usize index)
+{
+    return mem + (vsize * index);
+}
 
 /**
  * @brief FNV-1a hash
@@ -72,15 +77,16 @@ void hashmap_free(hashmap *map)
     {
         return;
     }
-    void *ptrs[6] = {
+    void *ptrs[7] = {
+        map->buckets,
         map->keys,
         map->values,
-        map->buckets,
+        map->values_flags,
         map->keys_swap,
         map->values_swap,
         map,
     };
-    free_ptrs(ptrs, 6);
+    free_ptrs(ptrs, 7);
 }
 
 hashmap *hashmap_new_with_cap(
@@ -111,6 +117,7 @@ hashmap *hashmap_new_with_cap(
     CMALLOC_CHECK(map->buckets, map->cap, sizeof(bucket), hashmap_free(map));
     MALLOC_CHECK(map->keys, map->kdsize * map->cap, hashmap_free(map));
     MALLOC_CHECK(map->values, map->vdsize * map->cap, hashmap_free(map));
+    CMALLOC_CHECK_COND_NULL(map->values_flags, map->cap, sizeof(u8), hashmap_free(map), ksize == 0);
     MALLOC_CHECK(map->keys_swap, map->kdsize * SWAP_CAP, hashmap_free(map));
     MALLOC_CHECK(map->values_swap, map->kdsize * SWAP_CAP, hashmap_free(map));
     return map;
@@ -126,14 +133,44 @@ hashmap *hashmap_new(
     return hashmap_new_with_cap(INITIAL_BUCKETS, ksize, vsize, seed, hasher, cmp);
 }
 
-static inline void *hashmap_key(hashmap *map, usize index)
+static inline usize _hashmap_key_size(const hashmap *map)
 {
-    return map->keys + (map->kdsize * index);
+    return map->kdsize;
 }
 
-static inline void *hashmap_value(hashmap *map, usize index)
+static inline usize _hashmap_val_size(const hashmap *map)
 {
-    return map->values + (map->vdsize * index);
+    return map->vdsize;
+}
+
+static inline void *hashmap_key(const hashmap *map, usize index)
+{
+    return map->keys + (_hashmap_key_size(map) * index);
+}
+
+static inline void *hashmap_key_swap(const hashmap *map, usize index)
+{
+    return map->keys_swap + (_hashmap_key_size(map) * index);
+}
+
+static inline void *hashmap_value(const hashmap *map, usize index)
+{
+    return map->values + (_hashmap_val_size(map) * index);
+}
+
+static inline void *hashmap_value_swap(const hashmap *map, usize index)
+{
+    return map->values_swap + (_hashmap_val_size(map) * index);
+}
+
+static inline u8 hashmap_value_flag(const hashmap *map, usize index)
+{
+    return map->values_flags[index];
+}
+
+static inline void hashmap_put_value_flag(const hashmap *map, usize index, u8 flag)
+{
+    map->values_flags[index] = flag;
 }
 
 int hashmap_resize(hashmap *map, usize resize)
@@ -142,20 +179,24 @@ int hashmap_resize(hashmap *map, usize resize)
     usize old_cap = map->cap;
     u8 *old_keys = map->keys;
     u8 *old_values = map->values;
+    u8 *old_values_flags = map->values_flags;
     bucket *old_buckets = map->buckets;
 
     map->cap = resize;
     map->keys = (u8 *)malloc(map->kdsize * map->cap);
     map->values = (u8 *)malloc(map->vdsize * map->cap);
+    map->values_flags = map->vsize > 0 ? (u8 *)calloc(map->cap, sizeof(u8)) : NULL;
     map->buckets = (bucket *)calloc(map->cap, sizeof(bucket));
-    if (!map->keys || !map->values || !map->buckets)
+    if (!map->keys || !map->values || !map->buckets || (map->vsize > 0 && !map->values_flags))
     {
         free2(map->keys);
         free2(map->values);
+        free2(map->values_flags);
         free2(map->buckets);
         map->cap = old_cap;
         map->keys = old_keys;
         map->values = old_values;
+        map->values_flags = old_values_flags;
         map->buckets = old_buckets;
         return 1;
     }
@@ -167,7 +208,9 @@ int hashmap_resize(hashmap *map, usize resize)
     {
         if (old_buckets[i].psl > 0)
         {
-            hashmap_set(map, old_buckets[i].key, old_buckets[i].value);
+            hashmap_set(map,
+                        mem_get_val(old_keys, map->kdsize, i),
+                        mem_get_val(old_values, map->vdsize, i));
             if (map->len == map->resize)
             {
                 break;
@@ -178,6 +221,7 @@ int hashmap_resize(hashmap *map, usize resize)
 
     free2(old_keys);
     free2(old_values);
+    free2(old_values_flags);
     free2(old_buckets);
     return 0;
 }
@@ -187,96 +231,92 @@ usize hashmap_hash_index(hashmap *map, u64 hash)
     return hash % map->cap;
 }
 
-static void _hashmap_put_key(hashmap *map, bucket *b, void *key, usize i)
+static void _hashmap_put_key(hashmap *map, void *key, usize i)
 {
-    u8 *ptr = map->keys + (i * map->ksize);
-    memcpy(ptr, key, map->ksize);
-    b->key = ptr;
+    u8 *ptr = hashmap_key(map, i);
+    memcpy(ptr, key, _hashmap_key_size(map));
 }
 
-static void _hashmap_put_zero_value(hashmap *map, bucket *b, void *value, usize i)
+static void _hashmap_put_zero_value(hashmap *map, void *value, usize i)
 {
-    b->value = NULL;
 }
 
-static void _hashmap_put_null_value(hashmap *map, bucket *b, void *value, usize i)
+static void _hashmap_put_null_value(hashmap *map, void *value, usize i)
 {
-    u8 *ptr = map->values + (i * map->vsize);
-    memset(ptr, 0, map->vsize);
-    b->value = NULL;
+    u8 *ptr = hashmap_value(map, i);
+    memset(ptr, 0, _hashmap_val_size(map));
+    hashmap_put_value_flag(map, i, 0);
 }
 
-static void _hashmap_put_normal_value(hashmap *map, bucket *b, void *value, usize i)
+static void _hashmap_put_normal_value(hashmap *map, void *value, usize i)
 {
-    u8 *ptr = map->values + (i * map->vsize);
-    memcpy(ptr, value, map->vsize);
-    b->value = ptr;
+    u8 *ptr = hashmap_value(map, i);
+    memcpy(ptr, value, _hashmap_val_size(map));
+    hashmap_put_value_flag(map, i, 1);
 }
 
-static void _hashmap_put_value(hashmap *map, bucket *b, void *value, usize i)
+static void _hashmap_put_value(hashmap *map, void *value, usize i)
 {
     if (map->vsize == 0)
     {
-        return _hashmap_put_zero_value(map, b, value, i);
+        return _hashmap_put_zero_value(map, value, i);
     }
 
     if (!value)
     {
-        return _hashmap_put_null_value(map, b, value, i);
+        return _hashmap_put_null_value(map, value, i);
     }
 
-    _hashmap_put_normal_value(map, b, value, i);
+    _hashmap_put_normal_value(map, value, i);
 }
 
-static void *_hashmap_put_key_by_swap(hashmap *map, bucket *b, void *key, usize i, usize swap_i)
+static void *_hashmap_put_key_by_swap(hashmap *map, void *key, usize i, usize swap_i)
 {
-    u8 *ptr = ptr = map->keys + (i * map->ksize);
-    u8 *swap_v = map->keys_swap + (map->ksize * swap_i);
-    memcpy(swap_v, ptr, map->ksize);
-    memcpy(ptr, key, map->ksize);
-    b->key = ptr;
+    u8 *ptr = hashmap_key(map, i);
+    u8 *swap_v = hashmap_key_swap(map, swap_i);
+    memcpy(swap_v, ptr, _hashmap_key_size(map));
+    memcpy(ptr, key, _hashmap_key_size(map));
     return swap_v;
 }
 
-static void *_hashmap_put_zero_value_by_swap(hashmap *map, bucket *b, void *value, usize i, usize swap_i)
+static void *_hashmap_put_zero_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
 {
-    _hashmap_put_zero_value(map, b, NULL, i);
     return NULL;
 }
 
-static void *_hashmap_put_null_value_by_swap(hashmap *map, bucket *b, void *value, usize i, usize swap_i)
+static void *_hashmap_put_null_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
 {
-    u8 *ptr = ptr = map->values + (i * map->vsize);
-    u8 *swap_v = map->values_swap + (map->vsize * swap_i);
-    memcpy(swap_v, ptr, map->vsize);
-    memset(ptr, 0, map->vsize);
-    b->value = NULL;
+    u8 *ptr = hashmap_value(map, i);
+    u8 *swap_v = hashmap_value_swap(map, swap_i);
+    memcpy(swap_v, ptr, _hashmap_val_size(map));
+    memset(ptr, 0, _hashmap_val_size(map));
+    hashmap_put_value_flag(map, i, 0);
     return swap_v;
 }
 
-static void *_hashmap_put_normal_value_by_swap(hashmap *map, bucket *b, void *value, usize i, usize swap_i)
+static void *_hashmap_put_normal_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
 {
-    u8 *ptr = map->values + (i * map->vsize);
-    u8 *swap_v = map->values_swap + (map->vsize * swap_i);
-    memcpy(swap_v, ptr, map->vsize);
-    memcpy(ptr, value, map->vsize);
-    b->value = ptr;
+    u8 *ptr = hashmap_value(map, i);
+    u8 *swap_v = hashmap_value_swap(map, swap_i);
+    memcpy(swap_v, ptr, _hashmap_val_size(map));
+    memcpy(ptr, value, _hashmap_val_size(map));
+    hashmap_put_value_flag(map, i, 1);
     return swap_v;
 }
 
-static void *_hashmap_put_value_by_swap(hashmap *map, bucket *b, void *value, usize i, usize swap_i)
+static void *_hashmap_put_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
 {
     if (map->vsize == 0)
     {
-        return _hashmap_put_zero_value_by_swap(map, b, value, i, swap_i);
+        return _hashmap_put_zero_value_by_swap(map, value, i, swap_i);
     }
 
     if (!value)
     {
-        return _hashmap_put_null_value_by_swap(map, b, value, i, swap_i);
+        return _hashmap_put_null_value_by_swap(map, value, i, swap_i);
     }
 
-    return _hashmap_put_normal_value_by_swap(map, b, value, i, swap_i);
+    return _hashmap_put_normal_value_by_swap(map, value, i, swap_i);
 }
 
 typedef struct
@@ -298,8 +338,8 @@ static _hashmap_insert_t _hashmap_displacement_instert(hashmap *map, _hashmap_in
 
         if (b->psl == 0)
         {
-            _hashmap_put_key(map, b, insert_info.key, insert_info.i);
-            _hashmap_put_value(map, b, insert_info.value, insert_info.i);
+            _hashmap_put_key(map, insert_info.key, insert_info.i);
+            _hashmap_put_value(map, insert_info.value, insert_info.i);
 
             b->psl = insert_info.psl;
             insert_info.psl = 0;
@@ -310,8 +350,8 @@ static _hashmap_insert_t _hashmap_displacement_instert(hashmap *map, _hashmap_in
         if (insert_info.psl > b->psl)
         {
             usize swap_i = insert_info.swap_i++ % SWAP_LEN;
-            insert_info.key = _hashmap_put_key_by_swap(map, b, insert_info.key, insert_info.i, swap_i);
-            insert_info.value = _hashmap_put_value_by_swap(map, b, insert_info.value, insert_info.i, swap_i);
+            insert_info.key = _hashmap_put_key_by_swap(map, insert_info.key, insert_info.i, swap_i);
+            insert_info.value = _hashmap_put_value_by_swap(map, insert_info.value, insert_info.i, swap_i);
 
             VALUE_SWAP(b->psl, insert_info.psl);
             insert_info.i = hashmap_hash_index(map, insert_info.i + 1);
@@ -321,14 +361,6 @@ static _hashmap_insert_t _hashmap_displacement_instert(hashmap *map, _hashmap_in
         insert_info.psl++;
         insert_info.i = hashmap_hash_index(map, insert_info.i + 1);
     }
-}
-
-void _hashmap_put(hashmap *map, void *key, void *value, usize i)
-{
-    bucket *b = NULL;
-    b = &map->buckets[i];
-    _hashmap_put_key(map, b, key, i);
-    _hashmap_put_value(map, b, value, i);
 }
 
 /**
@@ -432,11 +464,6 @@ void hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl)
     } while (insert_info.psl > 0);
 }
 
-static u64 _hashmap_psl_by_hashi_i(hashmap *map, usize hashi, usize i)
-{
-    return (hashi > i) ? map->cap + i - hashi + PSL : i - hashi + PSL;
-}
-
 int hashmap_set(hashmap *map, void *key, void *value)
 {
     if (!map || (!key && !value))
@@ -451,11 +478,10 @@ int hashmap_set(hashmap *map, void *key, void *value)
     _hashmap_insert_t insert_info = hashmap_find_put_insert_index(map, key, value, hash_index);
     if (insert_info.is_update)
     {
-        _hashmap_put(map, key, value, insert_info.i);
+        _hashmap_put_value(map, value, insert_info.i);
         return 0;
     }
 
-    usize inse_index;
     if (map->len == map->resize)
     {
         if (hashmap_resize(map, map->cap * RESIZE_ZOOM))
@@ -476,19 +502,17 @@ void *hashmap_get(hashmap *map, const void *key)
         return NULL;
     }
 
-    bucket *b = NULL;
-    usize i = map->hasher(key, map->ksize, map->seed) % map->cap;
+    usize i = map->hasher(key, _hashmap_key_size(map), map->seed) % map->cap;
     while (1)
     {
-        b = &map->buckets[i];
-        if (b->psl == 0)
+        if (map->buckets[i].psl == 0)
         {
             return NULL;
         }
 
-        if (map->cmp(b->key, key, map->ksize) == 0)
+        if (map->cmp(hashmap_key(map, i), key, _hashmap_key_size(map)) == 0)
         {
-            return b->value;
+            return hashmap_value_flag(map, i) ? hashmap_value(map, i) : NULL;
         }
 
         i = (i + 1) % map->cap;
@@ -505,12 +529,9 @@ void *hashmap_get_cp(hashmap *map, const void *key)
         return NULL;
     }
 
-    void *ret_val = malloc(map->vsize);
-    if (!ret_val)
-    {
-        return NULL;
-    }
-    memcpy(ret_val, val, map->vsize);
+    void *ret_val;
+    MALLOC_CHECK(ret_val, _hashmap_val_size(map), )
+    memcpy(ret_val, val, _hashmap_val_size(map));
     return ret_val;
 }
 
@@ -522,16 +543,15 @@ b32 hashmap_exist(hashmap *map, const void *key)
     }
 
     bucket *b = NULL;
-    usize i = map->hasher(key, map->ksize, map->seed) % map->cap;
+    usize i = map->hasher(key, _hashmap_key_size(map), map->seed) % map->cap;
     while (1)
     {
-        b = &map->buckets[i];
-        if (b->psl == 0)
+        if (map->buckets[i].psl == 0)
         {
             return 0;
         }
 
-        if (map->cmp(b->key, key, map->ksize) == 0)
+        if (map->cmp(hashmap_key(map, i), key, _hashmap_key_size(map)) == 0)
         {
             return 1;
         }
@@ -544,6 +564,7 @@ b32 hashmap_exist(hashmap *map, const void *key)
 
 int hashmap_remove(hashmap *map, const void *key)
 {
+    // todo
     if (!map || !key)
     {
         return 1;
@@ -555,7 +576,7 @@ int hashmap_remove(hashmap *map, const void *key)
     }
 
     bucket *b = NULL;
-    usize i = map->hasher(key, map->ksize, map->seed) % map->cap;
+    usize i = map->hasher(key, _hashmap_key_size(map), map->seed) % map->cap;
     while (1)
     {
         b = &map->buckets[i];
@@ -564,7 +585,7 @@ int hashmap_remove(hashmap *map, const void *key)
             return 0;
         }
 
-        if (map->cmp(b->key, key, map->ksize) == 0)
+        if (map->cmp(hashmap_key(map, i), key, _hashmap_key_size(map)) == 0)
         {
             map->len--;
             break;
@@ -573,11 +594,9 @@ int hashmap_remove(hashmap *map, const void *key)
         i = (i + 1) % map->cap;
     }
 
-    // usize pre_i = i;
     bucket *pre_b = b;
-    void *pre_k = map->keys + (i * map->ksize);
-    void *pre_v = map->values + (i * map->vsize);
-
+    void *pre_k = hashmap_key(map, i);
+    void *pre_v = hashmap_value(map, i);
     void *cur_k = NULL;
     void *cur_v = NULL;
     while (1)
@@ -590,19 +609,15 @@ int hashmap_remove(hashmap *map, const void *key)
             pre_b->psl = 0;
             break;
         }
-        cur_k = map->keys + (i * map->ksize);
-        cur_v = map->values + (i * map->vsize);
-
-        memcpy(pre_k, cur_k, map->ksize);
-        memcpy(pre_v, cur_v, map->vsize);
-        pre_b->psl = b->psl - 1;
-        pre_b->key = pre_k;   // 可能可以删掉这行
-        pre_b->value = pre_v; // 可能可以删掉这行
-
-        // pre_i = i;
-        pre_b = b;
+        cur_k = hashmap_key(map, i);
+        cur_v = hashmap_value(map, i);
+        memcpy(pre_k, cur_k, _hashmap_key_size(map));
+        memcpy(pre_v, cur_v, _hashmap_val_size(map));
         pre_k = cur_k;
         pre_v = cur_v;
+
+        pre_b->psl = b->psl - 1;
+        pre_b = b;
     };
 
     return 0;
@@ -650,12 +665,12 @@ int hashmap_update(hashmap *dst, hashmap *src)
     usize l = src->len;
     while (i < src->cap && l > 0)
     {
-        bucket *b = &src->buckets[i++];
-        if (b->psl > 0)
+        if (src->buckets[i].psl > 0)
         {
+            hashmap_set(dst, hashmap_key(src, i), hashmap_value(src, i));
             l--;
-            hashmap_set(dst, b->key, b->value);
         }
+        i++;
     }
 
     return 0;
@@ -739,16 +754,18 @@ void *hashmap_iter_key(hashmap_iterator *iter)
     }
 
     const hashmap *map = iter->map;
-    while (!hashmap_iter_is_end(iter))
+    do
     {
         bucket *b = &map->buckets[iter->index];
-        iter->index += iter->step;
         if (b->psl > 0)
         {
-            iter->len++;
-            return b->key;
+            void *key = hashmap_key(iter->map, iter->index);
+            iter->index += iter->step;
+            iter->len += 1;
+            return key;
         }
-    }
+        iter->index += iter->step;
+    } while (!hashmap_iter_is_end(iter));
 
     return NULL;
 }
@@ -761,16 +778,18 @@ void *hashmap_iter_value(hashmap_iterator *iter)
     }
 
     const hashmap *map = iter->map;
-    while (!hashmap_iter_is_end(iter))
+    do
     {
         bucket *b = &map->buckets[iter->index];
-        iter->index += iter->step;
         if (b->psl > 0)
         {
-            iter->len++;
-            return b->value;
+            void *val = hashmap_value(iter->map, iter->index);
+            iter->index += iter->step;
+            iter->len += 1;
+            return val;
         }
-    }
+        iter->index += iter->step;
+    } while (!hashmap_iter_is_end(iter));
 
     return NULL;
 }
@@ -784,19 +803,20 @@ hashmap_iterator_kv hashmap_iter_kv(hashmap_iterator *iter)
     }
 
     const hashmap *map = iter->map;
-    while (!hashmap_iter_is_end(iter))
+    do
     {
         bucket *b = &map->buckets[iter->index];
-        iter->index += iter->step;
         if (b->psl > 0)
         {
-            iter->len++;
             kv.state = 0;
-            kv.key = b->key;
-            kv.value = b->value;
+            kv.key = hashmap_key(iter->map, iter->index);
+            kv.value = hashmap_key(iter->map, iter->index);
+            iter->index += iter->step;
+            iter->len += 1;
             return kv;
         }
-    }
+        iter->index += iter->step;
+    } while (!hashmap_iter_is_end(iter));
 
     return kv;
 }

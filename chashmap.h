@@ -22,9 +22,9 @@
         }                             \
     }
 
-#define CMALLOC_CHECK(p, c, s, f)        \
+#define CMALLOC_CHECK(p, l, s, f)        \
     {                                    \
-        p = (__typeof__(p))calloc(c, s); \
+        p = (__typeof__(p))calloc(l, s); \
         if (p == NULL)                   \
         {                                \
             f;                           \
@@ -42,6 +42,18 @@
         {                                  \
             MALLOC_CHECK(p, s, f);         \
         }                                  \
+    }
+
+#define CMALLOC_CHECK_COND_NULL(p, l, s, f, c) \
+    {                                          \
+        if (c)                                 \
+        {                                      \
+            p = NULL;                          \
+        }                                      \
+        else                                   \
+        {                                      \
+            CMALLOC_CHECK(p, l, s, f);         \
+        }                                      \
     }
 
 /**
@@ -70,8 +82,8 @@ inline b32 hashmap_is_success(int ret)
 typedef struct bucket
 {
     i64 psl;
-    void *key;
-    void *value;
+    // void *key;
+    // void *value;
 } bucket;
 
 typedef struct hashmap_header
@@ -80,6 +92,7 @@ typedef struct hashmap_header
     bucket *buckets;
     u8 *keys;
     u8 *values;
+    u8 *values_flags;
     // 容量
     usize cap;
     usize len;
