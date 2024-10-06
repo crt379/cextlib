@@ -143,22 +143,22 @@ static inline usize _hashmap_val_size(const hashmap *map)
     return map->vdsize;
 }
 
-static inline void *hashmap_key(const hashmap *map, usize index)
+static inline void *hashmap_key_p(const hashmap *map, usize index)
 {
     return map->keys + (_hashmap_key_size(map) * index);
 }
 
-static inline void *hashmap_key_swap(const hashmap *map, usize index)
+static inline void *hashmap_key_swap_p(const hashmap *map, usize index)
 {
     return map->keys_swap + (_hashmap_key_size(map) * index);
 }
 
-static inline void *hashmap_value(const hashmap *map, usize index)
+static inline void *hashmap_value_p(const hashmap *map, usize index)
 {
     return map->values + (_hashmap_val_size(map) * index);
 }
 
-static inline void *hashmap_value_swap(const hashmap *map, usize index)
+static inline void *hashmap_value_swap_p(const hashmap *map, usize index)
 {
     return map->values_swap + (_hashmap_val_size(map) * index);
 }
@@ -171,6 +171,31 @@ static inline u8 hashmap_value_flag(const hashmap *map, usize index)
 static inline void hashmap_put_value_flag(const hashmap *map, usize index, u8 flag)
 {
     map->values_flags[index] = flag;
+}
+
+static inline usize hashmap_hash_index(hashmap *map, u64 hash)
+{
+    return hash % map->cap;
+}
+
+static inline void *hashmap_key(const hashmap *map, usize index)
+{
+    if (map->ksize == 0)
+    {
+        return (void *)(*(uintptr_t *)hashmap_key_p(map, index));
+    }
+
+    return hashmap_key_p(map, index);
+}
+
+static inline void *hashmap_value(const hashmap *map, usize index)
+{
+    if (map->vsize == 0)
+    {
+        return (void *)(*(uintptr_t *)hashmap_value_p(map, index));
+    }
+
+    return hashmap_value_flag(map, index) ? hashmap_value_p(map, index) : NULL;
 }
 
 int hashmap_resize(hashmap *map, usize resize)
@@ -226,33 +251,115 @@ int hashmap_resize(hashmap *map, usize resize)
     return 0;
 }
 
-usize hashmap_hash_index(hashmap *map, u64 hash)
+static void _hashmap_put_zero_key(hashmap *map, void *key, usize i)
 {
-    return hash % map->cap;
+    uintptr_t *ptr = hashmap_key_p(map, i);
+    *ptr = (uintptr_t)key;
 }
 
-static void _hashmap_put_key(hashmap *map, void *key, usize i)
+static void _hashmap_put_null_key(hashmap *map, void *key, usize i)
 {
-    u8 *ptr = hashmap_key(map, i);
+    u8 *ptr = hashmap_key_p(map, i);
+    memset(ptr, 0, _hashmap_key_size(map));
+}
+
+static void _hashmap_put_normal_key(hashmap *map, void *key, usize i)
+{
+    u8 *ptr = hashmap_key_p(map, i);
     memcpy(ptr, key, _hashmap_key_size(map));
 }
 
 static void _hashmap_put_zero_value(hashmap *map, void *value, usize i)
 {
+    uintptr_t *ptr = hashmap_value_p(map, i);
+    *ptr = (uintptr_t)value;
+    hashmap_put_value_flag(map, i, 1);
 }
 
 static void _hashmap_put_null_value(hashmap *map, void *value, usize i)
 {
-    u8 *ptr = hashmap_value(map, i);
+    u8 *ptr = hashmap_value_p(map, i);
     memset(ptr, 0, _hashmap_val_size(map));
     hashmap_put_value_flag(map, i, 0);
 }
 
 static void _hashmap_put_normal_value(hashmap *map, void *value, usize i)
 {
-    u8 *ptr = hashmap_value(map, i);
+    u8 *ptr = hashmap_value_p(map, i);
     memcpy(ptr, value, _hashmap_val_size(map));
     hashmap_put_value_flag(map, i, 1);
+}
+
+static void *_hashmap_put_zero_key_by_swap(hashmap *map, void *key, usize i, usize swap_i)
+{
+    uintptr_t *ptr = hashmap_key_p(map, i);
+    uintptr_t *swap_k = hashmap_key_swap_p(map, swap_i);
+    *swap_k = *ptr;
+    *ptr = (uintptr_t)key;
+    return (void*)*swap_k;
+}
+
+static void *_hashmap_put_null_key_by_swap(hashmap *map, void *key, usize i, usize swap_i)
+{
+    u8 *ptr = hashmap_key_p(map, i);
+    u8 *swap_k = hashmap_key_swap_p(map, swap_i);
+    memcpy(swap_k, ptr, _hashmap_key_size(map));
+    memcpy(ptr, 0, _hashmap_key_size(map));
+    return swap_k;
+}
+
+static void *_hashmap_put_normal_key_by_swap(hashmap *map, void *key, usize i, usize swap_i)
+{
+    u8 *ptr = hashmap_key_p(map, i);
+    u8 *swap_k = hashmap_key_swap_p(map, swap_i);
+    memcpy(swap_k, ptr, _hashmap_key_size(map));
+    memcpy(ptr, key, _hashmap_key_size(map));
+    return swap_k;
+}
+
+static void *_hashmap_put_zero_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
+{
+    uintptr_t *ptr = hashmap_value_p(map, i);
+    uintptr_t *swap_v = hashmap_value_swap_p(map, swap_i);
+    *swap_v = *ptr;
+    *ptr = (uintptr_t)value;
+    hashmap_put_value_flag(map, i, 1);
+    return (void*)*swap_v;
+}
+
+static void *_hashmap_put_null_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
+{
+    u8 *ptr = hashmap_value_p(map, i);
+    u8 *swap_v = hashmap_value_swap_p(map, swap_i);
+    memcpy(swap_v, ptr, _hashmap_val_size(map));
+    memset(ptr, 0, _hashmap_val_size(map));
+    hashmap_put_value_flag(map, i, 0);
+    return swap_v;
+}
+
+static void *_hashmap_put_normal_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
+{
+    u8 *ptr = hashmap_value_p(map, i);
+    u8 *swap_v = hashmap_value_swap_p(map, swap_i);
+    memcpy(swap_v, ptr, _hashmap_val_size(map));
+    memcpy(ptr, value, _hashmap_val_size(map));
+    hashmap_put_value_flag(map, i, 1);
+    return swap_v;
+}
+
+static void _hashmap_put_key(hashmap *map, void *key, usize i)
+{
+    if (map->ksize == 0)
+    {
+        return _hashmap_put_zero_key(map, key, i);
+    }
+
+    if (!key)
+    {
+        return _hashmap_put_null_key(map, key, i);
+    }
+
+    _hashmap_put_normal_key(map, key, i);
 }
 
 static void _hashmap_put_value(hashmap *map, void *value, usize i)
@@ -272,36 +379,17 @@ static void _hashmap_put_value(hashmap *map, void *value, usize i)
 
 static void *_hashmap_put_key_by_swap(hashmap *map, void *key, usize i, usize swap_i)
 {
-    u8 *ptr = hashmap_key(map, i);
-    u8 *swap_v = hashmap_key_swap(map, swap_i);
-    memcpy(swap_v, ptr, _hashmap_key_size(map));
-    memcpy(ptr, key, _hashmap_key_size(map));
-    return swap_v;
-}
+    if (map->ksize == 0)
+    {
+        return _hashmap_put_zero_key_by_swap(map, key, i, swap_i);
+    }
 
-static void *_hashmap_put_zero_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
-{
-    return NULL;
-}
+    if (!key)
+    {
+        return _hashmap_put_null_key_by_swap(map, key, i, swap_i);
+    }
 
-static void *_hashmap_put_null_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
-{
-    u8 *ptr = hashmap_value(map, i);
-    u8 *swap_v = hashmap_value_swap(map, swap_i);
-    memcpy(swap_v, ptr, _hashmap_val_size(map));
-    memset(ptr, 0, _hashmap_val_size(map));
-    hashmap_put_value_flag(map, i, 0);
-    return swap_v;
-}
-
-static void *_hashmap_put_normal_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
-{
-    u8 *ptr = hashmap_value(map, i);
-    u8 *swap_v = hashmap_value_swap(map, swap_i);
-    memcpy(swap_v, ptr, _hashmap_val_size(map));
-    memcpy(ptr, value, _hashmap_val_size(map));
-    hashmap_put_value_flag(map, i, 1);
-    return swap_v;
+    return _hashmap_put_normal_key_by_swap(map, key, i, swap_i);
 }
 
 static void *_hashmap_put_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
@@ -326,7 +414,7 @@ typedef struct
     void *key;
     void *value;
     usize swap_i;
-    b32 is_update;
+    b32 is_exsit;
 } _hashmap_insert_t;
 
 static _hashmap_insert_t _hashmap_displacement_instert(hashmap *map, _hashmap_insert_t insert_info)
@@ -349,12 +437,13 @@ static _hashmap_insert_t _hashmap_displacement_instert(hashmap *map, _hashmap_in
 
         if (insert_info.psl > b->psl)
         {
-            usize swap_i = insert_info.swap_i++ % SWAP_LEN;
+            usize swap_i = insert_info.swap_i % SWAP_LEN;
             insert_info.key = _hashmap_put_key_by_swap(map, insert_info.key, insert_info.i, swap_i);
             insert_info.value = _hashmap_put_value_by_swap(map, insert_info.value, insert_info.i, swap_i);
 
             VALUE_SWAP(b->psl, insert_info.psl);
             insert_info.i = hashmap_hash_index(map, insert_info.i + 1);
+            insert_info.swap_i += 1;
             return insert_info;
         }
 
@@ -372,7 +461,7 @@ static _hashmap_insert_t _hashmap_displacement_instert(hashmap *map, _hashmap_in
  * @param i hash下标
  * @return 开始查找插入位置的下标
  */
-_hashmap_insert_t hashmap_find_put_insert_index(hashmap *map, void *key, void *value, usize i)
+_hashmap_insert_t hashmap_find_insert_index(hashmap *map, void *key, void *value, usize i)
 {
     _hashmap_insert_t insert_info = {
         .psl = key ? PSL : NULL_KEY_PSL,
@@ -380,7 +469,7 @@ _hashmap_insert_t hashmap_find_put_insert_index(hashmap *map, void *key, void *v
         .key = key,
         .value = value,
         .swap_i = 0,
-        .is_update = 0,
+        .is_exsit = 0,
     };
     usize psl = PSL;
 
@@ -395,7 +484,7 @@ _hashmap_insert_t hashmap_find_put_insert_index(hashmap *map, void *key, void *v
         if (!key && b.psl == NULL_KEY_PSL)
         {
             insert_info.i = i;
-            insert_info.is_update = 1;
+            insert_info.is_exsit = 1;
             return insert_info;
         }
 
@@ -428,7 +517,7 @@ _hashmap_insert_t hashmap_find_put_insert_index(hashmap *map, void *key, void *v
         if (map->cmp(hashmap_key(map, i), key, _hashmap_key_size(map)) == 0)
         {
             insert_info.i = i;
-            insert_info.is_update = 1;
+            insert_info.is_exsit = 1;
             return insert_info;
         }
 
@@ -455,7 +544,7 @@ void hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl)
         .key = key,
         .value = value,
         .swap_i = 0,
-        .is_update = -1,
+        .is_exsit = 0,
     };
 
     do
@@ -473,10 +562,8 @@ int hashmap_set(hashmap *map, void *key, void *value)
 
     u64 hash = key ? map->hasher(key, _hashmap_key_size(map), map->seed) : NULL_KEY_HASH;
     usize hash_index = hashmap_hash_index(map, hash);
-
-    // 查找更新 或 查找可以插入的位置
-    _hashmap_insert_t insert_info = hashmap_find_put_insert_index(map, key, value, hash_index);
-    if (insert_info.is_update)
+    _hashmap_insert_t insert_info = hashmap_find_insert_index(map, key, value, hash_index);
+    if (insert_info.is_exsit)
     {
         _hashmap_put_value(map, value, insert_info.i);
         return 0;
@@ -502,22 +589,14 @@ void *hashmap_get(hashmap *map, const void *key)
         return NULL;
     }
 
-    usize i = map->hasher(key, _hashmap_key_size(map), map->seed) % map->cap;
-    while (1)
+    u64 hash = key ? map->hasher(key, _hashmap_key_size(map), map->seed) : NULL_KEY_HASH;
+    usize hash_index = hashmap_hash_index(map, hash);
+    _hashmap_insert_t insert_info = hashmap_find_insert_index(map, (void*)key, NULL, hash_index);
+    if (insert_info.is_exsit)
     {
-        if (map->buckets[i].psl == 0)
-        {
-            return NULL;
-        }
-
-        if (map->cmp(hashmap_key(map, i), key, _hashmap_key_size(map)) == 0)
-        {
-            return hashmap_value_flag(map, i) ? hashmap_value(map, i) : NULL;
-        }
-
-        i = (i + 1) % map->cap;
+        return hashmap_value(map, insert_info.i);
     }
-
+    
     return NULL;
 }
 
@@ -542,20 +621,12 @@ b32 hashmap_exist(hashmap *map, const void *key)
         return 0;
     }
 
-    usize i = map->hasher(key, _hashmap_key_size(map), map->seed) % map->cap;
-    while (1)
+    u64 hash = key ? map->hasher(key, _hashmap_key_size(map), map->seed) : NULL_KEY_HASH;
+    usize hash_index = hashmap_hash_index(map, hash);
+    _hashmap_insert_t insert_info = hashmap_find_insert_index(map, (void*)key, NULL, hash_index);
+    if (insert_info.is_exsit)
     {
-        if (map->buckets[i].psl == 0)
-        {
-            return 0;
-        }
-
-        if (map->cmp(hashmap_key(map, i), key, _hashmap_key_size(map)) == 0)
-        {
-            return 1;
-        }
-
-        i = (i + 1) % map->cap;
+        return 1;
     }
 
     return 0;
@@ -574,23 +645,18 @@ int hashmap_remove(hashmap *map, const void *key)
         return 0;
     }
 
-    usize i = map->hasher(key, _hashmap_key_size(map), map->seed) % map->cap;
-    while (1)
+    u64 hash = key ? map->hasher(key, _hashmap_key_size(map), map->seed) : NULL_KEY_HASH;
+    usize hash_index = hashmap_hash_index(map, hash);
+    
+    _hashmap_insert_t insert_info = hashmap_find_insert_index(map, (void *)key, NULL, hash_index);
+    if (!insert_info.is_exsit)
     {
-        if (map->buckets[i].psl == 0)
-        {
-            return 0;
-        }
-
-        if (map->cmp(hashmap_key(map, i), key, _hashmap_key_size(map)) == 0)
-        {
-            map->len--;
-            break;
-        }
-
-        i = (i + 1) % map->cap;
+        return 0;
     }
 
+    map->len--;
+    usize i = insert_info.i;
+    
     bucket *b, *pre_b;
     pre_b = &map->buckets[i];
     void *pre_k = hashmap_key(map, i);

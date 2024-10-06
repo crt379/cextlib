@@ -13,11 +13,14 @@ void hashmap_print(hashmap *map)
     printf("    buckets: %p\n", map->buckets);
     printf("    keys: %p\n", map->keys);
     printf("    values: %p\n", map->values);
+    printf("    values_flags: %p\n", map->values_flags);
     printf("    cap: %zu\n", map->cap);
     printf("    len: %zu\n", map->len);
     printf("    resize_len: %zu\n", map->resize);
     printf("    ksize: %zu\n", map->ksize);
     printf("    vsize: %zu\n", map->vsize);
+    printf("    kdsize: %zu\n", map->kdsize);
+    printf("    vdsize: %zu\n", map->vdsize);
     printf("    seed: %zu\n", map->seed);
     printf("    keys_swap: %p\n", map->keys_swap);
     printf("    values_swap: %p\n", map->values_swap);
@@ -137,14 +140,22 @@ void test_set_and_get()
 
     hashmap_set(map, &(int){2}, NULL);
     assert(map->len == 2);
+    
     assert(hashmap_get(map, &(int){2}) == NULL);
     assert(hashmap_exist(map, &(int){2}));
     hashmap_free(map);
 
-    // map = hashmap_new(sizeof(int), 0, 123456, NULL, NULL);
-    // hashmap_set(map, NULL, &(int){1});
-    // assert(map->len == 1);
-    // hashmap_free(map);
+    // NULL key
+    map = hashmap_new(sizeof(int), 0, 123456, NULL, NULL);
+    hashmap_set(map, NULL, &(int){1});
+    assert(map->len == 1);
+    assert(*(int *)hashmap_get(map, NULL) == 1);
+    assert(hashmap_exist(map, NULL));
+
+    hashmap_set(map, NULL, &(int){2});
+    assert(*(int *)hashmap_get(map, NULL) == 2);
+    
+    hashmap_free(map);
 }
 
 void test_iteration()
