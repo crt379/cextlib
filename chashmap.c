@@ -558,7 +558,7 @@ void hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl)
 
 int hashmap_set(hashmap *map, void *key, void *value)
 {
-    if (!map || (!key && !value))
+    if (!map)
     {
         return 1;
     }

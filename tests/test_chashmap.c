@@ -45,6 +45,7 @@ void print_int_map_values(hashmap *map)
 {
     int *value;
     hashmap_iterator iter = hashmap_begin(map);
+
     printf("============== print_int_map_values(%p) ===========\n", map);
     while (!hashmap_iter_is_end(&iter))
     {
@@ -57,6 +58,7 @@ void print_int_map_items(hashmap *map)
 {
     hashmap_iterator_kv kv;
     hashmap_iterator iter = hashmap_begin(map);
+
     printf("============== print_int_map_items(%p) ===========\n", map);
     while (!hashmap_iter_is_end(&iter))
     {
@@ -88,7 +90,7 @@ void test_new()
 
 void test_set_and_get()
 {
-    printf("============== test_set ===========\n");
+    printf("============== test_set_and_get ===========\n");
     hashmap *map;
 
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
@@ -128,6 +130,14 @@ void test_set_and_get()
     assert(map->len == 2);
     assert(hashmap_get(map, &(int){2}) == NULL);
     assert(hashmap_exist(map, &(int){2}));
+
+    hashmap_set(map, &(int){3}, &(int){3});
+    assert(map->len == 3);
+    assert(*(int *)hashmap_get(map, &(int){3}) == 3);
+
+    hashmap_set(map, &(int){2}, &(int){3});
+    assert(map->len == 3);
+    assert(*(int *)hashmap_get(map, &(int){2}) == 3);
     hashmap_free(map);
 
     // zero value
@@ -140,7 +150,7 @@ void test_set_and_get()
 
     hashmap_set(map, &(int){2}, NULL);
     assert(map->len == 2);
-    
+
     assert(hashmap_get(map, &(int){2}) == NULL);
     assert(hashmap_exist(map, &(int){2}));
     hashmap_free(map);
@@ -149,12 +159,22 @@ void test_set_and_get()
     map = hashmap_new(sizeof(int), 0, 123456, NULL, NULL);
     hashmap_set(map, NULL, &(int){1});
     assert(map->len == 1);
-    assert(*(int *)hashmap_get(map, NULL) == 1);
     assert(hashmap_exist(map, NULL));
+    assert(*(int *)hashmap_get(map, NULL) == 1);
 
     hashmap_set(map, NULL, &(int){2});
+    assert(hashmap_exist(map, NULL));
     assert(*(int *)hashmap_get(map, NULL) == 2);
-    
+
+    hashmap_set(map, NULL, NULL);
+    assert(hashmap_exist(map, NULL));
+    assert(hashmap_get(map, NULL) == NULL);
+    assert(map->len == 1);
+
+    hashmap_set(map, &(int){3}, &(int){3});
+    assert(map->len == 2);
+    assert(hashmap_exist(map, &(int){3}));
+    assert(*(int *)hashmap_get(map, &(int){3}) == 3);
     hashmap_free(map);
 }
 
@@ -191,9 +211,13 @@ void test_del()
 
     hashmap_remove(map, &(int){1});
     assert(map->len == 19);
+    assert(!hashmap_exist(map, &(int){1}));
+    assert(hashmap_get(map, &(int){1}) == NULL);
 
     hashmap_remove(map, &(int){17});
     assert(map->len == 18);
+    assert(!hashmap_exist(map, &(int){17}));
+    assert(hashmap_get(map, &(int){17}) == NULL);
 
     hashmap_remove(map, &(int){3});
     assert(map->len == 17);
