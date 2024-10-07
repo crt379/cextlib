@@ -307,7 +307,7 @@ static void *_hashmap_put_null_key_by_swap(hashmap *map, void *key, usize i, usi
     u8 *ptr = hashmap_key_p(map, i);
     u8 *swap_k = hashmap_key_swap_p(map, swap_i);
     memcpy(swap_k, ptr, _hashmap_key_size(map));
-    memcpy(ptr, 0, _hashmap_key_size(map));
+    memset(ptr, 0, _hashmap_key_size(map));
     return swap_k;
 }
 
