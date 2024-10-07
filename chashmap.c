@@ -1,18 +1,15 @@
 #include "chashmap.h"
-#include "ctype.h"
+#include "cutils.h"
+#include <string.h>
+#include <assert.h>
 
-#define SWAP_CAP      2 // swap key value 的容量，不只是用于交换
-#define SWAP_LEN      2 // 交换使用的长度
-#define PTR_LEN       sizeof(uintptr_t)
-#define NULL_KEY_HASH 0
-#define NULL_KEY_PSL  UINT64_MAX
-
-#define VALUE_SWAP(a, b)       \
-    {                          \
-        __typeof__(a) tmp = a; \
-        a = b;                 \
-        b = tmp;               \
-    }
+#define HASHMAP_HASH_INIT 2166136261u
+#define PSL               1
+#define SWAP_CAP          2 // swap key value 的容量，不只是用于交换
+#define SWAP_LEN          2 // 交换使用的长度
+#define PTR_LEN           sizeof(uintptr_t)
+#define NULL_KEY_HASH     0
+#define NULL_KEY_PSL      UINT64_MAX
 
 static inline void *mem_get_val(u8 *mem, usize vsize, usize index)
 {
@@ -63,7 +60,13 @@ static u64 fnv_1a_hash(const void *data, usize dsize, u64 seed)
     return hash ^ hash >> 32;
 }
 
-inline void free_ptrs(void **ptrs, size len)
+/**
+ * @brief 释放指针数组中的指针
+ *
+ * @param ptrs
+ * @param len
+ */
+static inline void free_ptrs(void **ptrs, size len)
 {
     for (usize i = 0; i < len; i++)
     {
@@ -296,7 +299,7 @@ static void *_hashmap_put_zero_key_by_swap(hashmap *map, void *key, usize i, usi
     uintptr_t *swap_k = hashmap_key_swap_p(map, swap_i);
     *swap_k = *ptr;
     *ptr = (uintptr_t)key;
-    return (void*)*swap_k;
+    return (void *)*swap_k;
 }
 
 static void *_hashmap_put_null_key_by_swap(hashmap *map, void *key, usize i, usize swap_i)
@@ -324,7 +327,7 @@ static void *_hashmap_put_zero_value_by_swap(hashmap *map, void *value, usize i,
     *swap_v = *ptr;
     *ptr = (uintptr_t)value;
     hashmap_put_value_flag(map, i, 1);
-    return (void*)*swap_v;
+    return (void *)*swap_v;
 }
 
 static void *_hashmap_put_null_value_by_swap(hashmap *map, void *value, usize i, usize swap_i)
@@ -591,12 +594,12 @@ void *hashmap_get(hashmap *map, const void *key)
 
     u64 hash = key ? map->hasher(key, _hashmap_key_size(map), map->seed) : NULL_KEY_HASH;
     usize hash_index = hashmap_hash_index(map, hash);
-    _hashmap_insert_t insert_info = hashmap_find_insert_index(map, (void*)key, NULL, hash_index);
+    _hashmap_insert_t insert_info = hashmap_find_insert_index(map, (void *)key, NULL, hash_index);
     if (insert_info.is_exsit)
     {
         return hashmap_value(map, insert_info.i);
     }
-    
+
     return NULL;
 }
 
@@ -623,7 +626,7 @@ b32 hashmap_exist(hashmap *map, const void *key)
 
     u64 hash = key ? map->hasher(key, _hashmap_key_size(map), map->seed) : NULL_KEY_HASH;
     usize hash_index = hashmap_hash_index(map, hash);
-    _hashmap_insert_t insert_info = hashmap_find_insert_index(map, (void*)key, NULL, hash_index);
+    _hashmap_insert_t insert_info = hashmap_find_insert_index(map, (void *)key, NULL, hash_index);
     if (insert_info.is_exsit)
     {
         return 1;
@@ -647,7 +650,7 @@ int hashmap_remove(hashmap *map, const void *key)
 
     u64 hash = key ? map->hasher(key, _hashmap_key_size(map), map->seed) : NULL_KEY_HASH;
     usize hash_index = hashmap_hash_index(map, hash);
-    
+
     _hashmap_insert_t insert_info = hashmap_find_insert_index(map, (void *)key, NULL, hash_index);
     if (!insert_info.is_exsit)
     {
@@ -656,7 +659,7 @@ int hashmap_remove(hashmap *map, const void *key)
 
     map->len--;
     usize i = insert_info.i;
-    
+
     bucket *b, *pre_b;
     pre_b = &map->buckets[i];
     void *pre_k = hashmap_key(map, i);

@@ -2,67 +2,10 @@
 #define __CHASHMAP_H
 
 #include "ctype.h"
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
 
-#define INITIAL_BUCKETS   16
-#define HASHMAP_HASH_INIT 2166136261u
-#define LOAD_FACTOR       0.8
-#define RESIZE_ZOOM       1.5
-#define PSL               1
-
-#define MALLOC_CHECK(p, s, f)         \
-    {                                 \
-        p = (__typeof__(p))malloc(s); \
-        if (p == NULL)                \
-        {                             \
-            f;                        \
-            return NULL;              \
-        }                             \
-    }
-
-#define CMALLOC_CHECK(p, l, s, f)        \
-    {                                    \
-        p = (__typeof__(p))calloc(l, s); \
-        if (p == NULL)                   \
-        {                                \
-            f;                           \
-            return NULL;                 \
-        }                                \
-    }
-
-#define MALLOC_CHECK_COND_NULL(p, s, f, c) \
-    {                                      \
-        if (c)                             \
-        {                                  \
-            p = NULL;                      \
-        }                                  \
-        else                               \
-        {                                  \
-            MALLOC_CHECK(p, s, f);         \
-        }                                  \
-    }
-
-#define CMALLOC_CHECK_COND_NULL(p, l, s, f, c) \
-    {                                          \
-        if (c)                                 \
-        {                                      \
-            p = NULL;                          \
-        }                                      \
-        else                                   \
-        {                                      \
-            CMALLOC_CHECK(p, l, s, f);         \
-        }                                      \
-    }
-
-/**
- * @brief 释放指针数组中的指针
- *
- * @param ptrs
- * @param len
- */
-void free_ptrs(void **ptrs, size len);
+#define INITIAL_BUCKETS 16
+#define LOAD_FACTOR     0.8
+#define RESIZE_ZOOM     1.5
 
 /**
  * @brief 检查hashmap操作是否成功
@@ -102,7 +45,7 @@ typedef struct hashmap_header
     const usize kdsize;
     const usize vdsize;
     const u64 seed;
-    // 交换使用, null key 值
+    // 交换使用
     u8 *keys_swap;
     u8 *values_swap;
     // 动态函数
