@@ -1,5 +1,6 @@
 #include "../chashmap.h"
 #include <time.h>
+#include <stdio.h>
 
 #define CAP       1000000
 #define TEST_SIZE 500000
