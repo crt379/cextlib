@@ -24,7 +24,7 @@ inline b32 hashmap_is_success(int ret)
 
 typedef struct bucket
 {
-    i64 psl;
+    usize psl;
     // void *key;
     // void *value;
 } bucket;

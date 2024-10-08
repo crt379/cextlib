@@ -9,7 +9,7 @@
 #define SWAP_LEN          2 // 交换使用的长度
 #define PTR_LEN           sizeof(uintptr_t)
 #define NULL_KEY_HASH     0
-#define NULL_KEY_PSL      UINT64_MAX
+#define NULL_KEY_PSL      SIZE_MAX
 
 static inline void *mem_get_val(u8 *mem, usize vsize, usize index)
 {
@@ -412,7 +412,7 @@ static void *_hashmap_put_value_by_swap(hashmap *map, void *value, usize i, usiz
 
 typedef struct
 {
-    u64 psl;
+    usize psl;
     usize i;
     void *key;
     void *value;
@@ -539,7 +539,7 @@ _hashmap_insert_t hashmap_find_insert_index(hashmap *map, void *key, void *value
  * @param psl
  * @return
  */
-void hashmap_insert(hashmap *map, void *key, void *value, usize i, u64 psl)
+void hashmap_insert(hashmap *map, void *key, void *value, usize i, usize psl)
 {
     _hashmap_insert_t insert_info = {
         .psl = psl,
