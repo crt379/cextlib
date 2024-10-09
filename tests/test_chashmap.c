@@ -14,6 +14,8 @@ void hashmap_print(hashmap *map)
     printf("    keys: %p\n", map->keys);
     printf("    values: %p\n", map->values);
     printf("    values_flags: %p\n", map->values_flags);
+    printf("    keys_swap: %p\n", map->keys_swap);
+    printf("    values_swap: %p\n", map->values_swap);
     printf("    cap: %zu\n", map->cap);
     printf("    len: %zu\n", map->len);
     printf("    resize_len: %zu\n", map->resize);
@@ -22,10 +24,62 @@ void hashmap_print(hashmap *map)
     printf("    kdsize: %zu\n", map->kdsize);
     printf("    vdsize: %zu\n", map->vdsize);
     printf("    seed: %zu\n", map->seed);
-    printf("    keys_swap: %p\n", map->keys_swap);
-    printf("    values_swap: %p\n", map->values_swap);
     printf("    hasher: %p\n", map->hasher);
     printf("    cmp: %p\n", map->cmp);
+}
+
+void hashmap_new_chack(hashmap *map, usize ksize, usize vsize, u64 seed,
+                       u64 (*hasher)(const void *data, usize dsize, u64 seed),
+                       int (*cmp)(const void *, const void *, usize))
+{
+    assert(map != NULL);
+    assert(map->buckets != NULL);
+    assert(map->keys != NULL);
+    assert(map->values != NULL);
+    if (vsize != 0)
+    {
+        assert(map->values_flags != NULL);
+    }
+    else
+    {
+        assert(map->values_flags == NULL);
+    }
+    assert(map->keys_swap != NULL);
+    assert(map->values_swap != NULL);
+    assert(map->cap > 0);
+    assert(map->len == 0);
+    assert(map->resize == (usize)(map->cap * LOAD_FACTOR));
+    assert(map->ksize == ksize);
+    assert(map->vsize == vsize);
+    if (ksize == 0)
+    {
+        assert(map->kdsize == sizeof(uintptr_t));
+    }
+    else
+    {
+        assert(map->kdsize == ksize);
+    }
+
+    if (vsize == 0)
+    {
+        assert(map->vdsize == sizeof(uintptr_t));
+    }
+    else
+    {
+        assert(map->vdsize == vsize);
+    }
+
+    assert(map->seed == seed);
+
+    if (hasher)
+    {
+        assert(map->hasher == hasher);
+    }
+
+    if (cmp)
+    {
+        assert(map->cmp == cmp);
+    }
 }
 
 void print_int_map_keys(hashmap *map)
@@ -73,18 +127,28 @@ void test_new()
     hashmap *map;
 
     map = hashmap_new(sizeof(int), sizeof(int), 123456, NULL, NULL);
-    assert(map != NULL);
-    assert(map->buckets != NULL);
-    assert(map->keys != NULL);
-    assert(map->values != NULL);
-    assert(map->cap == INITIAL_BUCKETS);
-    assert(map->len == 0);
-    assert(map->hasher);
     hashmap_print(map);
+    hashmap_new_chack(map, sizeof(int), sizeof(int), 123456, NULL, NULL);
     hashmap_free(map);
 
     map = hashmap_new(sizeof(int), sizeof(hashmap), 123456, NULL, NULL);
     hashmap_print(map);
+    hashmap_new_chack(map, sizeof(int), sizeof(hashmap), 123456, NULL, NULL);
+    hashmap_free(map);
+
+    map = hashmap_new(0, sizeof(int), 123456, NULL, NULL);
+    hashmap_print(map);
+    hashmap_new_chack(map, 0, sizeof(int), 123456, NULL, NULL);
+    hashmap_free(map);
+
+    map = hashmap_new(sizeof(int), 0, 123456, NULL, NULL);
+    hashmap_print(map);
+    hashmap_new_chack(map, sizeof(int), 0, 123456, NULL, NULL);
+    hashmap_free(map);
+
+    map = hashmap_new(0, 0, 123456, NULL, NULL);
+    hashmap_print(map);
+    hashmap_new_chack(map, 0, 0, 123456, NULL, NULL);
     hashmap_free(map);
 }
 

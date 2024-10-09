@@ -36,6 +36,9 @@ typedef struct hashmap_header
     u8 *keys;
     u8 *values;
     u8 *values_flags;
+    // 交换使用
+    u8 *keys_swap;
+    u8 *values_swap;
     // 容量
     usize cap;
     usize len;
@@ -45,12 +48,11 @@ typedef struct hashmap_header
     const usize kdsize;
     const usize vdsize;
     const u64 seed;
-    // 交换使用
-    u8 *keys_swap;
-    u8 *values_swap;
     // 动态函数
     u64 (*hasher)(const void *data, usize dsize, u64 seed);
     int (*cmp)(const void *key1, const void *key2, usize ksize);
+    void (*kfree)(void *key);
+    void (*vfree)(void *value);
 } hashmap;
 
 /**
@@ -97,6 +99,22 @@ hashmap *hashmap_new(
     int cmp(const void *, const void *, usize));
 
 /**
+ * @brief 设置hashmap key释放函数
+ *
+ * @param map
+ * @param kfree
+ */
+void hashmap_set_kfree(hashmap *map, void (*kfree)(void *key));
+
+/**
+ * @brief 设置hashmap value释放函数
+ *
+ * @param map
+ * @param vfree
+ */
+void hashmap_set_vfree(hashmap *map, void (*vfree)(void *value));
+
+/**
  * @brief hashmap插入key val
  *
  * @param map
@@ -131,7 +149,7 @@ void *hashmap_get(hashmap *map, const void *key);
  * @param key
  * @return 查找到返回拷贝val所在指针 否则返回NULL
  */
-void *hashmap_get_cp(hashmap *map, const void *key);
+void *hashmap_get_clone(hashmap *map, const void *key);
 
 /**
  * @brief hashmap查找key是否存在

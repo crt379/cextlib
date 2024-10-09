@@ -1,7 +1,7 @@
 #include "chashmap.h"
 #include "cutils.h"
-#include <string.h>
 #include <assert.h>
+#include <string.h>
 
 #define HASHMAP_HASH_INIT 2166136261u
 #define PSL               1
@@ -114,13 +114,15 @@ hashmap *hashmap_new_with_cap(
     *(usize *)&map->seed = seed;
     map->hasher = (hasher) ? hasher : fnv_1a_hash;
     map->cmp = (cmp) ? cmp : memcmp;
+    map->kfree = NULL;
+    map->vfree = NULL;
 
     *(usize *)&map->kdsize = ksize ? ksize : PTR_LEN;
     *(usize *)&map->vdsize = vsize ? vsize : PTR_LEN;
     CMALLOC_CHECK(map->buckets, map->cap, sizeof(bucket), hashmap_free(map));
     MALLOC_CHECK(map->keys, map->kdsize * map->cap, hashmap_free(map));
     MALLOC_CHECK(map->values, map->vdsize * map->cap, hashmap_free(map));
-    CMALLOC_CHECK_COND_NULL(map->values_flags, map->cap, sizeof(u8), hashmap_free(map), ksize == 0);
+    CMALLOC_CHECK_COND_NULL(map->values_flags, map->cap, sizeof(u8), hashmap_free(map), vsize == 0);
     MALLOC_CHECK(map->keys_swap, map->kdsize * SWAP_CAP, hashmap_free(map));
     MALLOC_CHECK(map->values_swap, map->kdsize * SWAP_CAP, hashmap_free(map));
     return map;
@@ -134,6 +136,16 @@ hashmap *hashmap_new(
     int cmp(const void *, const void *, usize))
 {
     return hashmap_new_with_cap(INITIAL_BUCKETS, ksize, vsize, seed, hasher, cmp);
+}
+
+void hashmap_set_kfree(hashmap *map, void (*kfree)(void *key))
+{
+    map->kfree = kfree;
+}
+
+void hashmap_set_vfree(hashmap *map, void (*vfree)(void *value))
+{
+    map->vfree = vfree;
 }
 
 static inline usize _hashmap_key_size(const hashmap *map)
@@ -201,6 +213,36 @@ static inline void *hashmap_value(const hashmap *map, usize index)
     return hashmap_value_flag(map, index) ? hashmap_value_p(map, index) : NULL;
 }
 
+static void hashmap_free_old_kv(
+    hashmap *map,
+    bucket *buckets,
+    u8 *keys, u8 *vals,
+    usize index, usize end_index, usize len, usize end_len)
+{
+    if (map->kfree || map->vfree)
+    {
+        while (len < end_len && index < end_index)
+        {
+            if (buckets[index].psl > 0)
+            {
+                if (map->kfree)
+                {
+                    map->kfree(mem_get_val(keys, _hashmap_key_size(map), index));
+                }
+
+                if (map->vfree)
+                {
+                    map->vfree(mem_get_val(vals, _hashmap_val_size(map), index));
+                }
+
+                len += 1;
+            }
+
+            index += 1;
+        }
+    }
+}
+
 int hashmap_resize(hashmap *map, usize resize)
 {
     usize old_len = map->len;
@@ -247,6 +289,15 @@ int hashmap_resize(hashmap *map, usize resize)
         i += 1;
     }
 
+    hashmap_free_old_kv(
+        map,
+        old_buckets,
+        old_keys,
+        old_values,
+        i,
+        old_cap,
+        old_len,
+        old_cap);
     free2(old_keys);
     free2(old_values);
     free2(old_values_flags);
@@ -276,7 +327,6 @@ static void _hashmap_put_zero_value(hashmap *map, void *value, usize i)
 {
     uintptr_t *ptr = hashmap_value_p(map, i);
     *ptr = (uintptr_t)value;
-    hashmap_put_value_flag(map, i, 1);
 }
 
 static void _hashmap_put_null_value(hashmap *map, void *value, usize i)
@@ -326,7 +376,6 @@ static void *_hashmap_put_zero_value_by_swap(hashmap *map, void *value, usize i,
     uintptr_t *swap_v = hashmap_value_swap_p(map, swap_i);
     *swap_v = *ptr;
     *ptr = (uintptr_t)value;
-    hashmap_put_value_flag(map, i, 1);
     return (void *)*swap_v;
 }
 
@@ -603,7 +652,7 @@ void *hashmap_get(hashmap *map, const void *key)
     return NULL;
 }
 
-void *hashmap_get_cp(hashmap *map, const void *key)
+void *hashmap_get_clone(hashmap *map, const void *key)
 {
     void *val = hashmap_get(map, key);
     if (!val)
@@ -635,10 +684,56 @@ b32 hashmap_exist(hashmap *map, const void *key)
     return 0;
 }
 
+static void hashmap_free_kv(hashmap *map, usize i)
+{
+    if (map->kfree)
+    {
+        map->kfree(hashmap_key(map, i));
+    }
+
+    if (map->vfree)
+    {
+        map->vfree(hashmap_value(map, i));
+    }
+}
+
+static void hashmap_remove_i(hashmap *map, usize i)
+{
+    bucket *b, *pre_b;
+
+    hashmap_free_kv(map, i);
+    pre_b = &map->buckets[i];
+    void *pre_k = hashmap_key_p(map, i);
+    void *pre_v = hashmap_value_p(map, i);
+    void *cur_k = NULL;
+    void *cur_v = NULL;
+    while (1)
+    {
+        i = (i + 1) % map->cap;
+        b = &map->buckets[i];
+        if (b->psl <= 1)
+        {
+            // 标记删除
+            pre_b->psl = 0;
+            break;
+        }
+        cur_k = hashmap_key_p(map, i);
+        cur_v = hashmap_value_p(map, i);
+        memcpy(pre_k, cur_k, _hashmap_key_size(map));
+        memcpy(pre_v, cur_v, _hashmap_val_size(map));
+        pre_k = cur_k;
+        pre_v = cur_v;
+
+        pre_b->psl = b->psl - 1;
+        pre_b = b;
+    };
+
+    map->len--;
+}
+
 int hashmap_remove(hashmap *map, const void *key)
 {
-    // todo
-    if (!map || !key)
+    if (!map)
     {
         return 1;
     }
@@ -657,36 +752,7 @@ int hashmap_remove(hashmap *map, const void *key)
         return 0;
     }
 
-    map->len--;
-    usize i = insert_info.i;
-
-    bucket *b, *pre_b;
-    pre_b = &map->buckets[i];
-    void *pre_k = hashmap_key(map, i);
-    void *pre_v = hashmap_value(map, i);
-    void *cur_k = NULL;
-    void *cur_v = NULL;
-    while (1)
-    {
-        i = (i + 1) % map->cap;
-        b = &map->buckets[i];
-        if (b->psl <= 1)
-        {
-            // 标记删除
-            pre_b->psl = 0;
-            break;
-        }
-        cur_k = hashmap_key(map, i);
-        cur_v = hashmap_value(map, i);
-        memcpy(pre_k, cur_k, _hashmap_key_size(map));
-        memcpy(pre_v, cur_v, _hashmap_val_size(map));
-        pre_k = cur_k;
-        pre_v = cur_v;
-
-        pre_b->psl = b->psl - 1;
-        pre_b = b;
-    };
-
+    hashmap_remove_i(map, insert_info.i);
     return 0;
 }
 
@@ -715,6 +781,7 @@ int hashmap_clear(hashmap *map)
         {
             b->psl = 0;
             map->len--;
+            hashmap_free_kv(map, i);
         }
     }
     assert(map->len == 0 && "hashmap_clear error");
