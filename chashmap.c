@@ -469,38 +469,38 @@ typedef struct
     b32 is_exsit;
 } _hashmap_insert_t;
 
-static _hashmap_insert_t _hashmap_displacement_instert(hashmap *map, _hashmap_insert_t insert_info)
+static void _hashmap_displacement_instert(hashmap *map, _hashmap_insert_t *insert_info)
 {
     bucket *b = NULL;
     while (1)
     {
-        b = &map->buckets[insert_info.i];
+        b = &map->buckets[insert_info->i];
 
         if (b->psl == 0)
         {
-            _hashmap_put_key(map, insert_info.key, insert_info.i);
-            _hashmap_put_value(map, insert_info.value, insert_info.i);
+            _hashmap_put_key(map, insert_info->key, insert_info->i);
+            _hashmap_put_value(map, insert_info->value, insert_info->i);
 
-            b->psl = insert_info.psl;
-            insert_info.psl = 0;
+            b->psl = insert_info->psl;
+            insert_info->psl = 0;
             map->len++;
-            return insert_info;
+            return;
         }
 
-        if (insert_info.psl > b->psl)
+        if (insert_info->psl > b->psl)
         {
-            usize swap_i = insert_info.swap_i % SWAP_LEN;
-            insert_info.key = _hashmap_put_key_by_swap(map, insert_info.key, insert_info.i, swap_i);
-            insert_info.value = _hashmap_put_value_by_swap(map, insert_info.value, insert_info.i, swap_i);
+            usize swap_i = insert_info->swap_i % SWAP_LEN;
+            insert_info->key = _hashmap_put_key_by_swap(map, insert_info->key, insert_info->i, swap_i);
+            insert_info->value = _hashmap_put_value_by_swap(map, insert_info->value, insert_info->i, swap_i);
 
-            VALUE_SWAP(b->psl, insert_info.psl);
-            insert_info.i = hashmap_hash_index(map, insert_info.i + 1);
-            insert_info.swap_i += 1;
-            return insert_info;
+            VALUE_SWAP(b->psl, insert_info->psl);
+            insert_info->i = hashmap_hash_index(map, insert_info->i + 1);
+            insert_info->swap_i += 1;
+            return;
         }
 
-        insert_info.psl++;
-        insert_info.i = hashmap_hash_index(map, insert_info.i + 1);
+        insert_info->psl++;
+        insert_info->i = hashmap_hash_index(map, insert_info->i + 1);
     }
 }
 
@@ -601,7 +601,7 @@ void hashmap_insert(hashmap *map, void *key, void *value, usize i, usize psl)
 
     do
     {
-        insert_info = _hashmap_displacement_instert(map, insert_info);
+        _hashmap_displacement_instert(map, &insert_info);
     } while (insert_info.psl > 0);
 }
 
